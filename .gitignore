@@ -1,4 +1,7 @@
 data/
+TransformerEngine/
+peft/
+transformers/
 
 # log and data files
 *.model

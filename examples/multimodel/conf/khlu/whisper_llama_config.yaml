@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: megatron_audio_gpt_peft_tuning2
+name: name
 
 trainer:
   devices: 1
@@ -64,10 +64,12 @@ model:
   tensor_model_parallel_size: 1 # intra-layer model parallelism
   pipeline_model_parallel_size: 1 # inter-layer model parallelism
   
-  pretrained_audio_model: stt_en_fastconformer_transducer_large
+  pretrained_audio_model: openai/whisper-medium
   freeze_llm: True
   freeze_audio_encoder: True
   freeze_modality_adapter: False
+  freeze_layer_prompts: False
+  freeze_lora: True
   load_audio_encoder: True
 
   global_batch_size: 2
@@ -101,99 +103,102 @@ model:
   # use_am_tokenizer: True
   # override_vocab_size: 1024
 
-  peft:
+  peft: 
     peft_scheme: "adapter"  # can be either adapter,ia3, or ptuning
     restore_from_path: null
     
     # Used for adapter peft training
-    adapter_tuning:
-      type: 'parallel_adapter' # this should be either 'parallel_adapter' or 'linear_adapter'
-      adapter_dim: 32
-      adapter_dropout: 0.0
-      norm_position: 'pre' # This can be set to 'pre' or 'post', 'pre' is normally what is used.
-      column_init_method: 'xavier' # IGNORED if linear_adapter is used, options: xavier, zero or normal
-      row_init_method: 'zero' # IGNORED if linear_adapter is used, options: xavier, zero or normal
-      norm_type: 'mixedfusedlayernorm' # IGNORED if layer_adapter is used,  options are ['layernorm', 'mixedfusedlayernorm']
+    # adapter_tuning:
+    #   type: 'parallel_adapter' # this should be either 'parallel_adapter' or 'linear_adapter'
+    #   adapter_dim: 32
+    #   adapter_dropout: 0.0
+    #   norm_position: 'pre' # This can be set to 'pre' or 'post', 'pre' is normally what is used.
+    #   column_init_method: 'xavier' # IGNORED if linear_adapter is used, options: xavier, zero or normal
+    #   row_init_method: 'zero' # IGNORED if linear_adapter is used, options: xavier, zero or normal
+    #   norm_type: 'mixedfusedlayernorm' # IGNORED if layer_adapter is used,  options are ['layernorm', 'mixedfusedlayernorm']
     
     lora_tuning:
-      adapter_dim: 32
+      adapter_dim: 1
       adapter_dropout: 0.0
-      column_init_method: 'xavier' # IGNORED if linear_adapter is used, options: xavier, zero or normal
+      # column_init_method: 'xavier' # IGNORED if linear_adapter is used, options: xavier, zero or normal
+      column_init_method: 'zero'
       row_init_method: 'zero' # IGNORED if linear_adapter is used, options: xavier, zero or normal
+      norm_position: null
     
     # Used for p-tuning peft training
-    p_tuning:
-      virtual_tokens: 10  # The number of virtual tokens the prompt encoder should add at the start of the sequence
-      bottleneck_dim: 1024  # the size of the prompt encoder mlp bottleneck
-      embedding_dim: 1024  # the size of the prompt encoder embeddings
-      init_std: 0.023
+    # p_tuning:
+    #   virtual_tokens: null  # The number of virtual tokens the prompt encoder should add at the start of the sequence
+    #   bottleneck_dim: 1024  # the size of the prompt encoder mlp bottleneck
+    #   embedding_dim: 1024  # the size of the prompt encoder embeddings
+    #   init_std: 0.023
 
   perception:
-    use_multi_layer_feat: false
-    multi_layer_feat:
-      layer_idx_list: [0,16]
-      aggregator:
-        mode: "cat"
-        pooling: "avg"
-        rounding: "floor"
+    prompt_size: 32
+    # use_multi_layer_feat: false
+    # multi_layer_feat:
+    #   layer_idx_list: [0,16]
+    #   aggregator:
+    #     mode: "cat"
+    #     pooling: "avg"
+    #     rounding: "floor"
 
-    modality_adapter: 
-      _target_: nemo.collections.asr.modules.ConformerEncoder
-      feat_in: 1024
-      feat_out: -1 # you may set it if you need different output size other than the default d_model
-      n_layers: 2
-      d_model: 512
+    # modality_adapter: 
+    #   _target_: nemo.collections.asr.modules.ConformerEncoder
+    #   feat_in: 1024
+    #   feat_out: -1 # you may set it if you need different output size other than the default d_model
+    #   n_layers: 2
+    #   d_model: 512
 
-      # Sub-sampling parameters
-      subsampling: dw_striding # vggnet, striding, stacking or stacking_norm, dw_striding
-      subsampling_factor: 8 # must be power of 2 for striding and vggnet
-      subsampling_conv_channels: 256 # set to -1 to make it equal to the d_model
-      causal_downsampling: false
+    #   # Sub-sampling parameters
+    #   subsampling: dw_striding # vggnet, striding, stacking or stacking_norm, dw_striding
+    #   subsampling_factor: 8 # must be power of 2 for striding and vggnet
+    #   subsampling_conv_channels: 256 # set to -1 to make it equal to the d_model
+    #   causal_downsampling: false
 
-      # Reduction parameters: Can be used to add another subsampling layer at a given position.
-      # Having a 2x reduction will speedup the training and inference speech while keeping similar WER.
-      # Adding it at the end will give the best WER while adding it at the beginning will give the best speedup.
-      reduction: null # pooling, striding, or null
-      reduction_position: null # Encoder block index or -1 for subsampling at the end of encoder
-      reduction_factor: 1
+    #   # Reduction parameters: Can be used to add another subsampling layer at a given position.
+    #   # Having a 2x reduction will speedup the training and inference speech while keeping similar WER.
+    #   # Adding it at the end will give the best WER while adding it at the beginning will give the best speedup.
+    #   reduction: null # pooling, striding, or null
+    #   reduction_position: null # Encoder block index or -1 for subsampling at the end of encoder
+    #   reduction_factor: 1
 
-      # Feed forward module's params
-      ff_expansion_factor: 4
+    #   # Feed forward module's params
+    #   ff_expansion_factor: 4
 
-      # Multi-headed Attention Module's params
-      self_attention_model: rel_pos # rel_pos or abs_pos
-      n_heads: 8 # may need to be lower for smaller d_models
-      # [left, right] specifies the number of steps to be seen from left and right of each step in self-attention
-      att_context_size: [-1, -1] # -1 means unlimited context
-      att_context_style: regular # regular or chunked_limited
-      xscaling: true # scales up the input embeddings by sqrt(d_model)
-      untie_biases: true # unties the biases of the TransformerXL layers
-      pos_emb_max_len: 5000
+    #   # Multi-headed Attention Module's params
+    #   self_attention_model: rel_pos # rel_pos or abs_pos
+    #   n_heads: 8 # may need to be lower for smaller d_models
+    #   # [left, right] specifies the number of steps to be seen from left and right of each step in self-attention
+    #   att_context_size: [-1, -1] # -1 means unlimited context
+    #   att_context_style: regular # regular or chunked_limited
+    #   xscaling: true # scales up the input embeddings by sqrt(d_model)
+    #   untie_biases: true # unties the biases of the TransformerXL layers
+    #   pos_emb_max_len: 5000
 
-      # Convolution module's params
-      conv_kernel_size: 9
-      conv_norm_type: 'batch_norm' # batch_norm or layer_norm or groupnormN (N specifies the number of groups)
-      # conv_context_size can be"causal" or a list of two integers while conv_context_size[0]+conv_context_size[1]+1==conv_kernel_size
-      # null means [(kernel_size-1)//2, (kernel_size-1)//2], and 'causal' means [(kernel_size-1), 0]
-      conv_context_size: null
+    #   # Convolution module's params
+    #   conv_kernel_size: 9
+    #   conv_norm_type: 'batch_norm' # batch_norm or layer_norm or groupnormN (N specifies the number of groups)
+    #   # conv_context_size can be"causal" or a list of two integers while conv_context_size[0]+conv_context_size[1]+1==conv_kernel_size
+    #   # null means [(kernel_size-1)//2, (kernel_size-1)//2], and 'causal' means [(kernel_size-1), 0]
+    #   conv_context_size: null
 
-      ### regularization
-      dropout: 0.1 # The dropout used in most of the Conformer Modules
-      dropout_pre_encoder: 0.1 # The dropout used before the encoder
-      dropout_emb: 0.0 # The dropout used for embeddings
-      dropout_att: 0.1 # The dropout for multi-headed attention modules
+    #   ### regularization
+    #   dropout: 0.1 # The dropout used in most of the Conformer Modules
+    #   dropout_pre_encoder: 0.1 # The dropout used before the encoder
+    #   dropout_emb: 0.0 # The dropout used for embeddings
+    #   dropout_att: 0.1 # The dropout for multi-headed attention modules
 
-      # set to non-zero to enable stochastic depth
-      stochastic_depth_drop_prob: 0.0
-      stochastic_depth_mode: linear  # linear or uniform
-      stochastic_depth_start_layer: 1
+    #   # set to non-zero to enable stochastic depth
+    #   stochastic_depth_drop_prob: 0.0
+    #   stochastic_depth_mode: linear  # linear or uniform
+    #   stochastic_depth_start_layer: 1
 
-    spec_augment:
-      _target_: nemo.collections.asr.modules.SpectrogramAugmentation
-      freq_masks: 0 # set to zero to disable it
-      time_masks: 0 # set to zero to disable it
-      freq_width: 27
-      time_width: 0.05
+    # spec_augment:
+    #   _target_: nemo.collections.asr.modules.SpectrogramAugmentation
+    #   freq_masks: 0 # set to zero to disable it
+    #   time_masks: 0 # set to zero to disable it
+    #   freq_width: 27
+    #   time_width: 0.05
 
     # the following are read from the pretrained AM:
     # output_dim: null
@@ -215,9 +220,9 @@ model:
       global_batch_size: ${model.global_batch_size}
       micro_batch_size: ${model.micro_batch_size}
       shuffle: True
-      num_workers: 0
+      num_workers: 16
       pin_memory: True
-      max_seq_length: 2048
+      max_seq_length: 196
       min_seq_length: 1
       drop_last: True
       # Notably, the data weights are controlled by either bucketing_weights
@@ -231,12 +236,13 @@ model:
       # add_eos: False
       end_string: ${model.data.end_string}
       add_sep: False
-      add_bos: False
+      add_bos: True
       separate_prompt_and_response_with_newline: False
       truncation_field: "context" # Options: ['context', 'answer']
       index_mapping_dir: null # Path to a directory to write index mapping files.
       # prompt_template: "Q: {input}\nA: {output}" # fstring to use for assistant prompt. Example: "Q: {input}\nA: {output}"
-      prompt_template: "<s>[INST]{input}[/INST] {output}"
+      # prompt_template: "<s>[INST]{input}[/INST] {output}"
+      prompt_template: "[INST] {input} [/INST] {output}"
       # ASR configs
       sample_rate: 16000 #${model.audio_encoder.preprocessor.sample_rate}
       max_duration: 24 # it is set for LibriSpeech, you may need to update it for your dataset
@@ -248,6 +254,8 @@ model:
       # bucketing params
       bucketing_strategy: "fully_randomized"
       bucketing_batch_size: null
+      audio_locator: "|audio_prompt|"
+      # audio_locator: null
       # sample_alpha: 0.1
 
     validation_ds:
@@ -257,7 +265,7 @@ model:
       shuffle: False
       num_workers: 0
       pin_memory: True
-      max_seq_length: 2048
+      max_seq_length: 196
       min_seq_length: 1
       drop_last: False
       context_key: ${model.data.train_ds.context_key}
@@ -272,15 +280,16 @@ model:
       truncation_field: "context" # Options: ['context', 'answer']
       index_mapping_dir: null # Path to a directory to write index mapping files.
       prompt_template: ${model.data.train_ds.prompt_template} # fstring to use for assistant prompt. Example: "Q: {input}\nA: {output}"
-      tokens_to_generate: 128
+      tokens_to_generate: 64
       # ASR configs
       sample_rate: 16000 #${model.audio_encoder.preprocessor.sample_rate}
 
       log_every_n_steps: 10
       metric:
-        name: "wer" # Name of the evaluation metric to use. Options: ['exact_string_match', 'loss']
+        name: "loss" # Name of the evaluation metric to use. Options: ['exact_string_match', 'loss']
         average: null # Average the metric over the dataset. Options: ['macro', 'micro']. Works only for 'F1', 'accuracy' etc. Refer to torchmetrics for metrics where this is supported.
         num_classes: null
+      audio_locator: ${model.data.train_ds.audio_locator}
 
     # test_ds:
     #   manifest_filepath: null # Path to a list of JSONL files corresponding to the source data. Data format is identical to train_ds.

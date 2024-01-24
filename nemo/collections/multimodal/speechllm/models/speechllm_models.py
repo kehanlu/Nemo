@@ -80,6 +80,13 @@ __all__ = ["ModularAudioGPTLoRAModel"]
 
 default_inference_config = {'tokens_to_generate': 30}
 
+# @kehan
+from nemo.collections.multimodal.speechllm.data.whisper_llama_qa_dataset import get_whisper_llama_dataset_from_config
+from transformers import WhisperForConditionalGeneration, WhisperProcessor
+from nemo.collections.nlp.models.language_modeling.megatron_gpt_model import MegatronGPTModel
+from nemo.collections.nlp.parts.mixins.nlp_adapter_mixins import NLPAdapterModelMixin
+
+
 
 class ModularAudioGPTLoRAModel(MegatronGPTLoRAModel):
     """Modularized speech GPT model."""
@@ -93,14 +100,15 @@ class ModularAudioGPTLoRAModel(MegatronGPTLoRAModel):
         if hasattr(self.cfg.data, "validation_ds") and hasattr(self.cfg.data.validation_ds, "metric"):
             self.val_metric_label_key = self.cfg.data.validation_ds.metric.get('label_key', 'labels')
 
-        self.perception = (
-            AudioPerceptionModel(cfg=cfg.perception)
-            if "encoders" not in cfg.perception
-            else MultiAudioPerceptionModel(cfg=cfg.perception)
-        )
-        self.setup_optimizer_param_groups()
-        self.configure_optimizers()
-        self.summarize(max_depth=2)
+        # @kehan
+        # self.perception = (
+        #     AudioPerceptionModel(cfg=cfg.perception)
+        #     if "encoders" not in cfg.perception
+        #     else MultiAudioPerceptionModel(cfg=cfg.perception)
+        # )
+        # self.setup_optimizer_param_groups()
+        # self.configure_optimizers()
+        # self.summarize(max_depth=2)
 
     def parameters(self):
         # override the same method in MegatronGPT model to include parameters ouside of LM
@@ -360,6 +368,10 @@ class ModularAudioGPTLoRAModel(MegatronGPTLoRAModel):
         as the LLM input.
         """
         encoder_input, attention_mask, labels, loss_mask, _ = self.prepare_llm_input(audio_batch)
+
+        logging.info(encoder_input.size())
+        logging.info(labels.size())
+
         if self.mcore_gpt:
             output = self.model(
                 input_ids=None,
@@ -950,6 +962,9 @@ class ModularAudioGPTLoRAModel(MegatronGPTLoRAModel):
         self._inference_config['tokens_to_generate'] = data_cfg.get('tokens_to_generate')
 
         output = self.predict_step(batch, batch_idx, dataloader_idx)
+        
+        # @kehan a trick for audio placeholder
+        batch['contexts'][batch['contexts'] == -42] = 0
 
         inputs_text = [self.tokenizer.ids_to_text(c.tolist()) for c in batch['contexts']]
         labels_text = [self.tokenizer.ids_to_text(a.tolist()) for a in batch['answers']]
