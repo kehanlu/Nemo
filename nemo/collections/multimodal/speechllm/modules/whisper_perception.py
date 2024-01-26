@@ -50,9 +50,6 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
 
 
     def forward(self, input_signal, input_signal_length=None, processed_signal=None, processed_signal_length=None):
-        # add prompt
-        # mask 
-        
         audio_features = self.forward_whisper(input_features=input_signal)
         
         audio_feat_lens = torch.zeros(input_signal.size(0)).long().to(input_signal.device) # for original SALM
@@ -75,13 +72,6 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
                 f"Whisper expects the mel input features to be of length {expected_seq_length}, but found {input_features.shape[-1]}. Make sure to pad the input mel features to {expected_seq_length}."
             )
         
-        
-
-        # output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        # output_hidden_states = (
-            # output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        # )
-        # return_dict = return_dict if return_dict is not None else self.en.config.use_return_dict
 
         inputs_embeds = nn.functional.gelu(self.encoder.conv1(input_features))
         inputs_embeds = nn.functional.gelu(self.encoder.conv2(inputs_embeds))
@@ -94,12 +84,6 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
 
         encoder_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
-
-        # check if head_mask has a correct number of layers specified if desired
-        # if head_mask is not None:
-        #     assert head_mask.size()[0] == (
-        #         len(self.layers)
-        #     ), f"The head_mask should be specified for {len(self.layers)} layers, but it is for {head_mask.size()[0]}."
 
         
         # (b, 1, tgt_len, src_len)
@@ -120,7 +104,7 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
             with torch.no_grad():
                 layer_output = self.forward_encoder_layer(encoder_layer=encoder_layer,hidden_states=hidden_states)
 
-            layer_prompt_output = self.forward_encoder_layer(encoder_layer=encoder_layer, prompts=layer_prompt, hidden_states=hidden_states)
+            layer_prompt_output = self.forward_encoder_layer(encoder_layer=encoder_layer, prompts=layer_prompt, hidden_states=hidden_states) # Q: prompts K,V: prompts+hidden_state
             layer_prompt_output = layer_prompt_output[0]
 
             hidden_states = layer_output[0]
@@ -130,20 +114,18 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
 
             layer_prompt_outputs.append(layer_prompt_output)
 
-
+        # Other implementation
         # layer_prompt_outputs = []
         # for idx, encoder_layer in enumerate(self.encoder.layers):
             
         #     layer_prompt = self.layer_prompts[idx].weight.unsqueeze(0).repeat(bs, 1, 1) # (b, prompt_size, d_model)
         #     hidden_states = torch.cat([layer_prompt, hidden_states], dim=1) # (b, prompt_size + features_length, d_model)
-            
         #     layer_outputs = encoder_layer(
         #         hidden_states,
         #         attention_mask=attention_mask,
         #         layer_head_mask=None,
         #         output_attentions=None,
         #     )
-
         #     # layer_outputs[0]: (bs, prompt_size+feature_length, d_model)
         #     layer_prompt_output = layer_outputs[0][:, :self.prompt_size, :] # (b, prompt_size)
         #     hidden_states = layer_outputs[0][:, self.prompt_size:, :] 
@@ -166,44 +148,6 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
         prompt_output = self.proj(prompt_output) # (b, prompt_size, hidden_size)
 
         return prompt_output
-
-
-        # for idx, encoder_layer in enumerate(self.encoder.layers):
-        #     if output_hidden_states:
-        #         encoder_states = encoder_states + (hidden_states,)
-        #     # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-        #     to_drop = False
-        #     # if self.training:
-        #     #     dropout_probability = torch.rand([])
-        #     #     if dropout_probability < self.layerdrop:  # skip the layer
-        #     #         to_drop = True
-
-        #     if to_drop:
-        #         layer_outputs = (None, None)
-        #     else:
-        #         if self.gradient_checkpointing and self.training:
-        #             layer_outputs = self._gradient_checkpointing_func(
-        #                 encoder_layer.__call__,
-        #                 hidden_states,
-        #                 None,
-        #                 (head_mask[idx] if head_mask is not None else None),
-        #                 output_attentions,
-        #             )
-        #         else:
-        #             layer_outputs = encoder_layer(
-        #                 hidden_states,
-        #                 None,
-        #                 layer_head_mask=(head_mask[idx] if head_mask is not None else None),
-        #                 output_attentions=output_attentions,
-        #             )
-
-        #         hidden_states = layer_outputs[0]
-
-        #     if output_attentions:
-        #         all_attentions = all_attentions + (layer_outputs[1],)
-
-        # hidden_states = self.layer_norm(hidden_states)
-        
 
     def forward_encoder_layer(
         self,
