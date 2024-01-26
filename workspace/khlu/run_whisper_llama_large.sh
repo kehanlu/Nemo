@@ -13,7 +13,6 @@ MEGATRON_CKPT=/NeMo/data/llama2-7b-chat.nemo
 ASR_MODEL="openai/whisper-medium" # huggingface id
 GLOBAL_BATCH=1
 MICRO_BATCH=1
-accumulate_grad_batches=8
 
 # TRAIN_MANIFESTS=/NeMo/data/PromptTTS/test.jsonl
 TRAIN_MANIFESTS=/NeMo/data/PromptTTS/manifest.attr.jsonl
@@ -23,9 +22,10 @@ TRAIN_MANIFESTS=/NeMo/data/PromptTTS/manifest.attr.jsonl
 VAL_MANIFESTS=/NeMo/data/PromptTTS/manifest.attr.val.jsonl
 
 # exp_name="llama7B-whisperB/attr"
-exp_name="llama7B-whisperM/attr"
+exp_name="0126-llama7B-whisperM/attr"
+devices=2
 
-CUDA_VISIBLE_DEVICES=1 python \
+CUDA_VISIBLE_DEVICES=0,1 WORLD_SIZE=2 python \
 run_sft_whisper_llama.py --config-path="../examples/multimodel/conf/khlu/" --config-name "whisper_llama_config.yaml" \
     name=$exp_name \
     model.pretrained_audio_model=$ASR_MODEL \
@@ -40,7 +40,10 @@ run_sft_whisper_llama.py --config-path="../examples/multimodel/conf/khlu/" --con
     ++model.data.validation_ds.random_context_num=64 \
     model.data.train_ds.manifest_filepath=$TRAIN_MANIFESTS \
     model.data.validation_ds.manifest_filepath=$VAL_MANIFESTS \
-    ++model.trainer.accumulate_grad_batches=${accumulate_grad_batches}
+    ++model.tensor_model_parallel_size=1 \
+    ++model.pipeline_model_parallel_size=2 \
+    ++trainer.num_nodes=1 \
+    ++trainer.devices=$devices
 
 
 

@@ -369,9 +369,6 @@ class ModularAudioGPTLoRAModel(MegatronGPTLoRAModel):
         """
         encoder_input, attention_mask, labels, loss_mask, _ = self.prepare_llm_input(audio_batch)
 
-        logging.info(encoder_input.size())
-        logging.info(labels.size())
-
         if self.mcore_gpt:
             output = self.model(
                 input_ids=None,
@@ -565,6 +562,7 @@ class ModularAudioGPTLoRAModel(MegatronGPTLoRAModel):
                 drop_last=True,
                 num_workers=data_cfg.num_workers,
                 pin_memory=data_cfg.pin_memory,
+                persistent_workers=True
             )
             return dataloader
 
@@ -960,9 +958,7 @@ class ModularAudioGPTLoRAModel(MegatronGPTLoRAModel):
             self.set_inference_config(inference_config=default_inference_config)
         self._inference_config['add_BOS'] = data_cfg.add_bos
         self._inference_config['tokens_to_generate'] = data_cfg.get('tokens_to_generate')
-
         output = self.predict_step(batch, batch_idx, dataloader_idx)
-        
         # @kehan a trick for audio placeholder
         batch['contexts'][batch['contexts'] == -42] = 0
 
@@ -997,9 +993,12 @@ class ModularAudioGPTLoRAModel(MegatronGPTLoRAModel):
 
         if data_cfg.get("log_every_n_steps", None) is not None:
             if batch_idx % data_cfg.log_every_n_steps == 0:
-                logging.info(f"Input: `{inputs_text[0]}`")
-                logging.info(f"Label: `{labels_text[0]}`")
-                logging.info(f"Pred: `{preds_text[0]}`")
+                logging.info("++++++++++++++ Pred Log ++++++++++++++")
+                for idx in range(4):
+                    logging.info(f"Input: `{inputs_text[idx]}`")
+                    logging.info(f"Label: `{labels_text[idx]}`")
+                    logging.info(f"Pred: `{preds_text[idx]}`")
+                logging.info("++++++++++++++++++++++++++++++++++++++")
 
         # if loss is nan, print the input, label and pred
         if loss.isnan():

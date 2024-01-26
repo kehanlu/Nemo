@@ -177,18 +177,6 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             modified_embedding = torch.cat([before_audio, current_audio_features, after_audio], dim=0)
             modified_embeddings.append(modified_embedding)
 
-        # input_embeddings = lm_embedding.word_embeddings(input_ids)
-        # modified_embeddings = []
-        # # inject the audio_features to the input_embeddings
-        # for idx, audio_start_id in enumerate(audio_start_ids):
-
-        #     before_audio = input_embeddings[idx, :audio_start_id, :]
-        #     current_audio_features = audio_features[idx, :]
-        #     after_audio = input_embeddings[idx, audio_start_id+self.prompt_size:, :]
-            
-        #     modified_embedding = torch.cat([before_audio, current_audio_features, after_audio], dim=0)
-        #     modified_embeddings.append(modified_embedding)
-
         input_embeddings = torch.stack(modified_embeddings, dim=0).contiguous()
 
         attention_mask = self._create_attention_mask(input_embeddings)
@@ -384,8 +372,6 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             peft_model_nemo_path=cfg.model.peft.restore_from_path,
             peft_model_ckpt_path=cfg.model.peft.restore_from_path,
         )
-        # save_restore_connector = None # @kehan
-
 
         if os.path.isdir(cfg.model.restore_from_path):
             save_restore_connector.model_extracted_dir = cfg.model.restore_from_path
@@ -398,6 +384,9 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             save_restore_connector=save_restore_connector,
             strict=False,
         )
+        logging.info("="*60)
+        logging.info(model)
+
         # load audio model weights
         # @kehan: handle in perception model
         # model = cls._load_pretrained_audio_weights(cfg, model, audio_model, speaker_model)
@@ -415,6 +404,7 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
 
 
     def _build_dataset(self, data_cfg, is_train=True):
+        logging.info(data_cfg)
         if 'augmentor' in data_cfg:
             augmentor = process_augmentations(
                 data_cfg['augmentor'], global_rank=self.global_rank, world_size=self.world_size
@@ -433,16 +423,28 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             data_cfg.max_seq_length = self.cfg.max_position_embeddings
 
 
-        # kehan: testing
-        return get_whisper_llama_dataset_from_config(
-            manifest_filepath=data_cfg.manifest_filepath,
-            config=data_cfg,
-            tokenizer=self.tokenizer,
-            augmentor=augmentor,
-            is_train=is_train,
-            sep_id=self.sep_id,
-            answer_only_loss=self.cfg.get('answer_only_loss', True),
-            virtual_tokens=self.virtual_tokens,
-        )
+        # kehan:
+        if data_cfg.get('is_tarred', False):
+            return get_tarred_aqa_dataset_from_config(
+                config=data_cfg,
+                tokenizer=self.tokenizer,
+                augmentor=augmentor,
+                sep_id=self.sep_id,
+                answer_only_loss=self.cfg.get('answer_only_loss', True),
+                virtual_tokens=self.virtual_tokens,
+                global_rank=parallel_state.get_data_parallel_rank(),
+                world_size=parallel_state.get_data_parallel_world_size(),
+            )
+        else:
+            return get_whisper_llama_dataset_from_config(
+                manifest_filepath=data_cfg.manifest_filepath,
+                config=data_cfg,
+                tokenizer=self.tokenizer,
+                augmentor=augmentor,
+                is_train=is_train,
+                sep_id=self.sep_id,
+                answer_only_loss=self.cfg.get('answer_only_loss', True),
+                virtual_tokens=self.virtual_tokens,
+            )
         
         

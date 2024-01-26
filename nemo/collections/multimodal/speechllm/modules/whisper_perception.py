@@ -18,7 +18,6 @@ from nemo.utils import logging
 
 # @kehan
 from transformers import WhisperModel
-from peft import PromptEmbedding, PromptTuningConfig
 
 __all__ = ["WhisperPerceptionModel"]
 

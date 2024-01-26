@@ -129,115 +129,7 @@ class TextProcessing(object):
         assert self.truncation_field in ["answer", "context"]
 
     def _process_example(self, context: str, output: str):
-        """
-        Create an example by concatenating text and answer.
-        Truncation is carried out when needed, but it is performed only on the prompt side.
-        BOS, EOS, and SEP, are added if specified.
-
-        function copied from nemo/collections/nlp/data/language_modelling/megatron/gpt_sft_dataset.py
-        """
-        if self.prompt_template is not None:
-            assert f'{{{self.input_key}}}' in self.prompt_template
-            assert f'{{{self.output_key}}}' in self.prompt_template
-            # Make sure that '{output}' always occurs at the end of the prompt template string
-            assert self.prompt_template.index(f'{{{self.output_key}}}') == len(self.prompt_template) - len(
-                f'{{{self.output_key}}}'
-            )
-            # Get the context by replacing only the input
-            original_context = context
-            context = (
-                self.prompt_template.replace(f'{{{self.input_key}}}', context)
-                .replace(f'{{{self.output_key}}}', '')
-                .strip(' ')
-            )
-            # Replace the input and output placeholders with the actual input and output
-            text = self.prompt_template.replace(f'{{{self.input_key}}}', original_context).replace(
-                f'{{{self.output_key}}}', output
-            )
-
-        elif self.separate_prompt_and_response_with_newline:
-            text = context + '\n' + output
-        else:
-            text = context + ' ' + output
-
-        if self.virtual_tokens:
-            # (@adithyare) we are going to insert "pad/eos" tokens in the beginning of the text and context
-            # these pad/eos tokens are placeholders for virtual tokens
-            pre_pad = [self.tokenizer.eos_id] * self.virtual_tokens
-        else:
-            pre_pad = []
-        answer_text = text[len(context) :]
-        answer_ids = pre_pad + self.tokenizer.text_to_ids(answer_text, self.sample_alpha)
-        if self.end_string:
-            answer_ids += self.tokenizer.text_to_ids(self.end_string)
-
-        if self.audio_locator is None:
-            # signle audio case
-            context_ids = self.tokenizer.text_to_ids(context)
-            context_start_idx = [0]
-        else:
-            # multiple audio case
-            context_ids = []
-            context_start_idx = []
-            for context_seg in context.split(self.audio_locator):
-                context_start_idx.append(len(context_ids))
-                context_ids.extend(self.tokenizer.text_to_ids(context_seg))
-        context_ids = pre_pad + context_ids
-        context_start_idx = [x + len(pre_pad) for x in context_start_idx]
-
-        # for the long context cases, collate_fn includes self.tokens_to_generate for padding
-        total_ids = len(context_ids) + max(len(answer_ids), self.tokens_to_generate)
-        if self.add_bos:
-            total_ids += 1
-        if self.add_sep:
-            total_ids += 1
-        # Only training need to consider eos token
-        if self.add_eos and self.tokens_to_generate == 0:
-            total_ids += 1
-
-        # If the total number of token is greater than the max, we will try to truncate the answer
-        if total_ids > self.max_seq_length:
-            truncation_length = total_ids - self.max_seq_length
-            if self.truncation_field == "answer":
-                answer_ids = answer_ids[: -min(truncation_length, len(answer_ids))]
-            elif self.truncation_field == "context":
-                context_ids = context_ids[: -min(truncation_length, len(context_ids))]
-
-        input_ids = context_ids
-        answer_start_idx = len(input_ids)
-
-        # Adds bos token in the start
-        if self.add_bos:
-            context_ids = [self.tokenizer.bos_id] + context_ids
-            input_ids = [self.tokenizer.bos_id] + input_ids
-            answer_start_idx += 1
-
-        # Adds sep token between text/prompt and answer
-        if self.add_sep:
-            context_ids = context_ids + [self.sep_id]
-            input_ids = input_ids + [self.sep_id]
-            answer_start_idx += 1
-
-        input_ids = input_ids + answer_ids
-
-        # Only training need to consider eos token
-        if self.add_eos and self.tokens_to_generate == 0:
-            input_ids = input_ids + [self.tokenizer.eos_id]
-
-        if len(input_ids) > self.max_seq_length:
-            logging.warning(f'Input ids length {len(input_ids)} exceed max sequence length {self.max_seq_length}')
-            input_ids = input_ids[: self.max_seq_length]
-
-        processed_example = {
-            'input_ids': input_ids,
-            'answer_start_idx': answer_start_idx,
-            'context_ids': context_ids,
-            'context_length': len(context_ids),
-            'answer_ids': answer_ids,
-            'context_start_idx': context_start_idx,
-        }
-
-        return processed_example
+        pass
 
 
 
@@ -332,6 +224,8 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
         self.whisper_processor = WhisperProcessor.from_pretrained(self.hf_model_id)
         self.trim = trim
         self.channel_selector = channel_selector
+        
+        logging.info(f"audio_locator: {audio_locator}")
 
 
     def get_manifest_sample(self, sample_id):
@@ -621,9 +515,11 @@ def get_whisper_llama_dataset_from_config(
             random_context_positive_percent=config.get('random_context_positive_percent', 0.1),
             question_file=question_file,
             audio_locator=config.get('audio_locator', None),
-            pretrained_audio_model=config.get("pretrained_audio_model", None)
+            pretrained_audio_model=config.get("pretrained_audio_model", "openai/whisper-medium")
             # kehan
         )
+        if config.get("pretrained_audio_model") is None:
+            logging.warning("No pretrained audio model is set.")
         datasets.append(dataset)
 
     if is_train:
