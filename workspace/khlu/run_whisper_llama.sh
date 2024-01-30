@@ -16,14 +16,16 @@ GLOBAL_BATCH=48
 MICRO_BATCH=24
 
 # TRAIN_MANIFESTS=/NeMo/data/PromptTTS/test.jsonl
-TRAIN_MANIFESTS=/NeMo/data/PromptTTS/manifest.attr.jsonl
+# TRAIN_MANIFESTS=/NeMo/data/PromptTTS/manifest.attr.jsonl
+# TRAIN_MANIFESTS=/NeMo/data/PromptTTS/manifest.attr.small.jsonl
 # TRAIN_MANIFESTS=/NeMo/data/PromptTTS/llama_test.jsonl
+TRAIN_MANIFESTS=["/NeMo/data/PromptTTS/manifest.attr.jsonl"]
 
 # VAL_MANIFESTS=/NeMo/data/PromptTTS/test.jsonl
 VAL_MANIFESTS=/NeMo/data/PromptTTS/manifest.attr.val.jsonl
 
 # exp_name="llama7B-whisperB/attr"
-exp_name="0126-Tinyllama-whisperB-test"
+exp_name="0129-Tinyllama-whisperB-attr"
 devices=2
 
 NCCL_DEBUG=WARN CUDA_VISIBLE_DEVICES=0,1 python \

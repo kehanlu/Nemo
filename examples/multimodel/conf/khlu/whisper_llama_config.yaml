@@ -42,7 +42,7 @@ exp_manager:
   create_checkpoint_callback: True
   checkpoint_callback_params:
     monitor: validation_${model.data.validation_ds.metric.name}
-    save_top_k: 1
+    save_top_k: 10
     mode: min
     save_nemo_on_train_end: True
     filename: '${name}--{${exp_manager.checkpoint_callback_params.monitor}:.3f}-{step}-{epoch}'
@@ -222,7 +222,7 @@ model:
       shuffle: True
       num_workers: 4
       pin_memory: True
-      max_seq_length: 196
+      max_seq_length: 200
       min_seq_length: 1
       drop_last: True
       # Notably, the data weights are controlled by either bucketing_weights
@@ -265,7 +265,7 @@ model:
       shuffle: False
       num_workers: 4
       pin_memory: True
-      max_seq_length: 196
+      max_seq_length: 200
       min_seq_length: 1
       drop_last: False
       context_key: ${model.data.train_ds.context_key}
@@ -332,13 +332,8 @@ model:
     - 0.98
     sched:
       name: CosineAnnealing
-      warmup_steps: 50
+      warmup_steps: 1000
       min_lr: 0.0 # min_lr must be 0.0 for prompt learning when pipeline parallel > 1
       constant_steps: 0 # Constant steps should also be 0 when min_lr=0
       monitor: val_loss
       reduce_on_plateau: false
-
-inference:
-  greedy: True
-  outfile_path: output.txt
-  compute_attention_mask: False

@@ -218,9 +218,9 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
         
         if self.cfg.get('freeze_layer_prompts', False):
             # self.perception.layer_prompts.freeze()
-            for param in self.perception.layer_prompts.parameters():
+            for param in self.perception.modality_adapter.layer_prompts.parameters():
                 param.requires_grad = False
-            known_groups.append('perception.layer_prompts.')
+            known_groups.append('perception.modality_adapter.')
 
 
         opt_params = []
@@ -271,7 +271,7 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             else:
                 return_state_dict = self.model.state_dict(prefix="model.")
             # kehan: only layer_prompts
-            state_dict = self.perception.layer_prompts.state_dict(prefix="perception.layer_prompts")
+            state_dict = self.perception.modality_adapter.state_dict(prefix="perception.modality_adapter.")
             return_state_dict.update(state_dict)
             return return_state_dict
         else:

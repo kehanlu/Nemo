@@ -22,6 +22,20 @@ from transformers import WhisperModel
 __all__ = ["WhisperPerceptionModel"]
 
 
+class PromptAdapter(NeuralModule):
+    def __init__(self, cfg, whisper_config):
+        super().__init__()
+        self.prompt_size = cfg.perception.prompt_size
+        self.layer_prompts = nn.ModuleList([
+            nn.Embedding(self.prompt_size, whisper_config.d_model) for _ in range(whisper_config.encoder_layers)
+        ])
+        self.layer_weights = nn.Parameter(torch.zeros(self.prompt_size, whisper_config.encoder_layers, dtype=torch.float), requires_grad=True) # (prompt_size, encoder_layers)
+
+        self.proj = nn.Sequential(
+                nn.LayerNorm(whisper_config.d_model),
+                nn.Linear(whisper_config.d_model, cfg.hidden_size) # project to llama hidden size
+            )
+        
 class WhisperPerceptionModel(NeuralModule, Exportable):
     def __init__(self, cfg):
         super().__init__()
@@ -32,21 +46,11 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
         logging.info(f"Loaded whisper model from {cfg.pretrained_audio_model}")
 
         self.encoder = whisper_model.encoder
-        # self.encoder.config.max_source_positions = 750
 
         # todo: add prompt based on cfg
         self.prompt_size = cfg.perception.prompt_size
         
-        self.layer_prompts = nn.ModuleList([
-            nn.Embedding(cfg.perception.prompt_size, whisper_model.config.d_model) for _ in range(whisper_model.config.encoder_layers)
-        ])
-        self.layer_weights = nn.Parameter(torch.zeros(self.prompt_size, whisper_model.config.encoder_layers)) # (prompt_size, encoder_layers)
-        self.proj = nn.Sequential(
-                nn.LayerNorm(whisper_model.config.d_model),
-                nn.Linear(whisper_model.config.d_model, cfg.hidden_size) # project to llama hidden size
-            )
-
-        logging.info(self.layer_prompts)
+        self.modality_adapter = PromptAdapter(cfg, whisper_config=whisper_model.config)
 
 
     def forward(self, input_signal, input_signal_length=None, processed_signal=None, processed_signal_length=None):
@@ -86,19 +90,11 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
         all_attentions = () if output_attentions else None
 
         
-        # (b, 1, tgt_len, src_len)
+        
         features_length = hidden_states.size(1)
-        total_length = self.prompt_size + features_length
-        attention_mask = torch.ones(total_length, total_length)
-        attention_mask[:self.prompt_size, :] = 0
-        attention_mask[self.prompt_size:, self.prompt_size:] = 0
-        attention_mask = attention_mask * -1e9
-        attention_mask = attention_mask.unsqueeze(0).unsqueeze(0).repeat(bs, 1, 1, 1) # (b, 1, total_length, total_length)
-        attention_mask = attention_mask.to(input_features.device)
-
         layer_prompt_outputs = []
         for idx, encoder_layer in enumerate(self.encoder.layers):
-            layer_prompt = self.layer_prompts[idx].weight.unsqueeze(0).repeat(bs, 1, 1)
+            layer_prompt = self.modality_adapter.layer_prompts[idx].weight.unsqueeze(0).repeat(bs, 1, 1)
             
             # audio output
             with torch.no_grad():
@@ -115,9 +111,17 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
             layer_prompt_outputs.append(layer_prompt_output)
 
         # Other implementation
+        
+        # (b, 1, tgt_len, src_len)
+        # total_length = self.prompt_size + features_length
+        # attention_mask = torch.ones(total_length, total_length)
+        # attention_mask[:self.prompt_size, :] = 0
+        # attention_mask[self.prompt_size:, self.prompt_size:] = 0
+        # attention_mask = attention_mask * -1e9
+        # attention_mask = attention_mask.unsqueeze(0).unsqueeze(0).repeat(bs, 1, 1, 1) # (b, 1, total_length, total_length)
+        # attention_mask = attention_mask.to(input_features.device)
         # layer_prompt_outputs = []
         # for idx, encoder_layer in enumerate(self.encoder.layers):
-            
         #     layer_prompt = self.layer_prompts[idx].weight.unsqueeze(0).repeat(bs, 1, 1) # (b, prompt_size, d_model)
         #     hidden_states = torch.cat([layer_prompt, hidden_states], dim=1) # (b, prompt_size + features_length, d_model)
         #     layer_outputs = encoder_layer(
@@ -138,14 +142,14 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
         layer_prompt_outputs = torch.stack(layer_prompt_outputs, dim=0) # (layer, b, prompt_size, d_model)
         layer_prompt_outputs = layer_prompt_outputs.permute(1, 2, 0, 3) # (b, prompt_size, layer, d_model)
 
-        norm_weights = torch.nn.functional.softmax(self.layer_weights, dim=-1).unsqueeze(-1) # (prompt_size, layer, 1)
+        norm_weights = torch.nn.functional.softmax(self.modality_adapter.layer_weights, dim=-1).unsqueeze(-1) # (prompt_size, layer, 1)
 
         assert all(abs(norm_weights.sum(1)- 1.0) < 0.0001)
 
         prompt_output = (layer_prompt_outputs * norm_weights).sum(dim=2) # (b, prompt_size, d_model)
         assert prompt_output.size(1) == self.prompt_size
 
-        prompt_output = self.proj(prompt_output) # (b, prompt_size, hidden_size)
+        prompt_output = self.modality_adapter.proj(prompt_output) # (b, prompt_size, hidden_size)
 
         return prompt_output
 
