@@ -273,6 +273,7 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             # kehan: only layer_prompts
             state_dict = self.perception.modality_adapter.state_dict(prefix="perception.modality_adapter.")
             return_state_dict.update(state_dict)
+            logging.info(self.perception.modality_adapter.layer_weights.softmax(-1))
             return return_state_dict
         else:
             # we want all the params with the same keys as calling self.state_dict()

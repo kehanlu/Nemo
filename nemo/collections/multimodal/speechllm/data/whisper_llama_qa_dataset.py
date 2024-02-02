@@ -175,6 +175,7 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
         sample_alpha: Optional[float] = None,
         audio_locator: Optional[str] = None,
         pretrained_audio_model: Optional[str] = None,
+        prompt_size=32,
     ):
         super().__init__(
             tokenizer=tokenizer,
@@ -224,6 +225,7 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
         self.whisper_processor = WhisperProcessor.from_pretrained(self.hf_model_id)
         self.trim = trim
         self.channel_selector = channel_selector
+        self.prompt_size = prompt_size
         
         logging.info(f"audio_locator: {audio_locator}")
 
@@ -354,7 +356,7 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
             
             context_ids = []
             context_ids.extend(self.tokenizer.text_to_ids(left))
-            context_ids.extend([-42]*32) # @kehan prompt placeholder
+            context_ids.extend([-42]*self.prompt_size) # @kehan prompt placeholder
             context_ids.extend(self.tokenizer.text_to_ids(right))
             
             context_start_idx = [0]
@@ -478,6 +480,8 @@ def get_whisper_llama_dataset_from_config(
         question_file = config.get('question_file', None)
         if isinstance(question_file, ListConfig) and len(question_file) == len(manifest_filepath):
             question_file = question_file[dataset_idx]
+
+        assert config.get("prompt_size")
         dataset = data_cls(
             manifest_filepath=file_path,
             tokenizer=tokenizer,
@@ -515,7 +519,9 @@ def get_whisper_llama_dataset_from_config(
             random_context_positive_percent=config.get('random_context_positive_percent', 0.1),
             question_file=question_file,
             audio_locator=config.get('audio_locator', None),
-            pretrained_audio_model=config.get("pretrained_audio_model", "openai/whisper-medium")
+
+            pretrained_audio_model=config.get("pretrained_audio_model", "openai/whisper-medium"),
+            prompt_size=config.get("prompt_size", 32),
             # kehan
         )
         if config.get("pretrained_audio_model") is None:

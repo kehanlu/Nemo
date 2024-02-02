@@ -17,7 +17,8 @@ from nemo.utils import logging
 
 
 # @kehan
-from transformers import WhisperModel
+from transformers import WhisperModel, BertConfig
+from transformers.models.bert.modeling_bert import BertEncoder
 
 __all__ = ["WhisperPerceptionModel"]
 
@@ -26,15 +27,43 @@ class PromptAdapter(NeuralModule):
     def __init__(self, cfg, whisper_config):
         super().__init__()
         self.prompt_size = cfg.perception.prompt_size
-        self.layer_prompts = nn.ModuleList([
-            nn.Embedding(self.prompt_size, whisper_config.d_model) for _ in range(whisper_config.encoder_layers)
-        ])
-        self.layer_weights = nn.Parameter(torch.zeros(self.prompt_size, whisper_config.encoder_layers, dtype=torch.float), requires_grad=True) # (prompt_size, encoder_layers)
+        
+        # self.layer_prompts = nn.Embedding(whisper_config.encoder_layers, whisper_config.d_model*self.prompt_size)
+        
+        self.layer_prompts = nn.ParameterList([nn.Parameter(torch.randn(1, self.prompt_size, whisper_config.d_model)) for _ in range(whisper_config.encoder_layers)])
+
+        self.layer_weights = nn.Parameter(torch.zeros(self.prompt_size, whisper_config.encoder_layers, dtype=torch.float)) # (prompt_size, encoder_layers)
 
         self.proj = nn.Sequential(
                 nn.LayerNorm(whisper_config.d_model),
                 nn.Linear(whisper_config.d_model, cfg.hidden_size) # project to llama hidden size
             )
+        
+class QformerAdapter(NeuralModule):
+    def __init__(self, cfg, whisper_config):
+        super().__init__()
+        self.target_layer_ids = [5, 11, 17, 23]
+        # use BERT as a qformer encoder
+        self.prompt_size = cfg.perception.prompt_size
+        self.layer_prompts = nn.ParameterList([nn.Parameter(torch.randn(1, self.prompt_size, whisper_config.d_model)) for _ in range(len(self.target_layer_ids))])
+        
+        self.layer_weights = nn.Parameter(torch.zeros(self.prompt_size, len(self.target_layer_ids), dtype=torch.float)) # (prompt_size, encoder_layers)
+
+
+        qformer_config = BertConfig()
+        qformer_config.num_hidden_layers = 2
+        qformer_config.num_attention_heads = whisper_config.encoder_attention_heads
+        qformer_config.hidden_size = whisper_config.d_model
+        qformer_config.add_cross_attention = True
+        qformer_config.is_decoder = True
+
+        self.qformer = BertEncoder(qformer_config)
+        self.proj = nn.Sequential(
+                nn.LayerNorm(whisper_config.d_model),
+                nn.Linear(whisper_config.d_model, cfg.hidden_size) # project to llama hidden size
+            )
+
+
         
 class WhisperPerceptionModel(NeuralModule, Exportable):
     def __init__(self, cfg):
@@ -49,8 +78,16 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
 
         # todo: add prompt based on cfg
         self.prompt_size = cfg.perception.prompt_size
+        # kehan: mode is use for debug. test which architecture is better
+        self.mode = cfg.perception.mode
         
-        self.modality_adapter = PromptAdapter(cfg, whisper_config=whisper_model.config)
+        logging.info(f"Using mode: {self.mode}")
+        if self.mode.startswith("prompt_"):
+            self.modality_adapter = PromptAdapter(cfg, whisper_config=whisper_model.config)
+        elif self.mode.startswith("qformer_"):
+            self.modality_adapter = QformerAdapter(cfg, whisper_config=whisper_model.config)
+        else:
+            raise NotImplementedError("mode not implemented")
 
 
     def forward(self, input_signal, input_signal_length=None, processed_signal=None, processed_signal_length=None):
@@ -85,68 +122,98 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
 
         hidden_states = inputs_embeds + embed_pos
         # hidden_states = nn.functional.dropout(hidden_states, p=self.encoder.dropout, training=self.training)
-
-        encoder_states = () if output_hidden_states else None
-        all_attentions = () if output_attentions else None
-
-        
         
         features_length = hidden_states.size(1)
-        layer_prompt_outputs = []
-        for idx, encoder_layer in enumerate(self.encoder.layers):
-            layer_prompt = self.modality_adapter.layer_prompts[idx].weight.unsqueeze(0).repeat(bs, 1, 1)
+        if self.mode == "prompt_1":
+            # in this mode, we forward the encoder layer twice, one for audio only, one for prompt+audio
             
-            # audio output
-            with torch.no_grad():
+            layer_prompt_outputs = []
+            for idx, encoder_layer in enumerate(self.encoder.layers):
+                # layer_prompt = self.modality_adapter.layer_prompts[idx].weight.unsqueeze(0).repeat(bs, 1, 1)
+                layer_prompt = self.modality_adapter.layer_prompts[idx].expand(bs, -1, -1)
+                
+                # audio output
                 layer_output = self.forward_encoder_layer(encoder_layer=encoder_layer,hidden_states=hidden_states)
 
-            layer_prompt_output = self.forward_encoder_layer(encoder_layer=encoder_layer, prompts=layer_prompt, hidden_states=hidden_states) # Q: prompts K,V: prompts+hidden_state
-            layer_prompt_output = layer_prompt_output[0]
+                layer_prompt_output = self.forward_encoder_layer(encoder_layer=encoder_layer, prompts=layer_prompt, hidden_states=hidden_states) # Q: prompts K,V: prompts+hidden_state
+                layer_prompt_output = layer_prompt_output[0]
 
-            hidden_states = layer_output[0]
+                hidden_states = layer_output[0]
 
-            assert layer_prompt_output.size(1) == self.prompt_size
-            assert hidden_states.size(1) == features_length
+                assert layer_prompt_output.size(1) == self.prompt_size
+                assert hidden_states.size(1) == features_length
 
-            layer_prompt_outputs.append(layer_prompt_output)
+                layer_prompt_outputs.append(layer_prompt_output)
+        elif self.mode == "prompt_2":
+            # in this implementation, forward the encoder once. We use attention mask to prevent the audio features attend to the prompt
+            # then collect the prompt output from each layer
 
-        # Other implementation
-        
-        # (b, 1, tgt_len, src_len)
-        # total_length = self.prompt_size + features_length
-        # attention_mask = torch.ones(total_length, total_length)
-        # attention_mask[:self.prompt_size, :] = 0
-        # attention_mask[self.prompt_size:, self.prompt_size:] = 0
-        # attention_mask = attention_mask * -1e9
-        # attention_mask = attention_mask.unsqueeze(0).unsqueeze(0).repeat(bs, 1, 1, 1) # (b, 1, total_length, total_length)
-        # attention_mask = attention_mask.to(input_features.device)
-        # layer_prompt_outputs = []
-        # for idx, encoder_layer in enumerate(self.encoder.layers):
-        #     layer_prompt = self.layer_prompts[idx].weight.unsqueeze(0).repeat(bs, 1, 1) # (b, prompt_size, d_model)
-        #     hidden_states = torch.cat([layer_prompt, hidden_states], dim=1) # (b, prompt_size + features_length, d_model)
-        #     layer_outputs = encoder_layer(
-        #         hidden_states,
-        #         attention_mask=attention_mask,
-        #         layer_head_mask=None,
-        #         output_attentions=None,
-        #     )
-        #     # layer_outputs[0]: (bs, prompt_size+feature_length, d_model)
-        #     layer_prompt_output = layer_outputs[0][:, :self.prompt_size, :] # (b, prompt_size)
-        #     hidden_states = layer_outputs[0][:, self.prompt_size:, :] 
+            # (b, 1, tgt_len, src_len)
+            total_length = self.prompt_size + features_length
+            attention_mask = torch.ones(total_length, total_length)
+            attention_mask[:self.prompt_size, :] = 0
+            attention_mask[self.prompt_size:, self.prompt_size:] = 0
+            attention_mask = attention_mask * -1e9
+            attention_mask = attention_mask.unsqueeze(0).unsqueeze(0).expand(bs, -1, -1, -1) # (b, 1, total_length, total_length)
+            attention_mask = attention_mask.to(input_features.device)
 
-        #     assert layer_prompt_output.size(1) == self.prompt_size
-        #     assert hidden_states.size(1) == features_length
+            layer_prompt_outputs = []
+            for idx, encoder_layer in enumerate(self.encoder.layers):
+                layer_prompt = self.modality_adapter.layer_prompts[idx].expand(bs, -1, -1) # (b, prompt_size, d_model)
+                hidden_states = torch.cat([layer_prompt, hidden_states], dim=1) # (b, prompt_size + features_length, d_model)
+                layer_outputs = encoder_layer(
+                    hidden_states,
+                    attention_mask=attention_mask,
+                    layer_head_mask=None,
+                    output_attentions=None,
+                )
+                # layer_outputs[0]: (bs, prompt_size+feature_length, d_model)
+                layer_prompt_output = layer_outputs[0][:, :self.prompt_size, :] # (b, prompt_size)
+                hidden_states = layer_outputs[0][:, self.prompt_size:, :] 
 
-        #     layer_prompt_outputs.append(layer_prompt_output)
+                assert layer_prompt_output.size(1) == self.prompt_size
+                assert hidden_states.size(1) == features_length
+
+                layer_prompt_outputs.append(layer_prompt_output)
+        elif self.mode == "qformer_1":
+            layer_prompt_outputs = []
+            for idx, encoder_layer in enumerate(self.encoder.layers):
+                
+                layer_outputs = encoder_layer(
+                    hidden_states,
+                    attention_mask=None,
+                    layer_head_mask=None,
+                    output_attentions=None,
+                )
+                hidden_states = layer_outputs[0]
+
+                if idx in self.modality_adapter.target_layer_ids:
+                    # use different prompt for different layers
+                    layer_prompt = self.modality_adapter.layer_prompts[self.modality_adapter.target_layer_ids.index(idx)].expand(bs, -1, -1)
+                    # concatenate the prompt with whisper output hidden states
+                    # prompt_hidden_states = torch.cat([layer_prompt, hidden_states], dim=1) # (b, prompt_size + features_length, d_model)
+                    
+                    # Qformer is a BERTEncoder(but set to decoder) from huggingface Transformers
+                    qformer_output = self.modality_adapter.qformer(
+                        hidden_states=layer_prompt,
+                        encoder_hidden_states=hidden_states,
+                    )
+
+                    layer_prompt_output = qformer_output.last_hidden_state # (b, prompt_size, d_model)
+                    layer_prompt_outputs.append(layer_prompt_output) # list of (b, prompt_size, d_model)
+
+        else:
+            raise NotImplementedError(f"mode {self.mode} not implemented")
 
         layer_prompt_outputs = torch.stack(layer_prompt_outputs, dim=0) # (layer, b, prompt_size, d_model)
         layer_prompt_outputs = layer_prompt_outputs.permute(1, 2, 0, 3) # (b, prompt_size, layer, d_model)
 
-        norm_weights = torch.nn.functional.softmax(self.modality_adapter.layer_weights, dim=-1).unsqueeze(-1) # (prompt_size, layer, 1)
+        self.norm_weights = torch.nn.functional.softmax(self.modality_adapter.layer_weights, dim=-1).unsqueeze(-1) # (prompt_size, layer, 1)
 
-        assert all(abs(norm_weights.sum(1)- 1.0) < 0.0001)
 
-        prompt_output = (layer_prompt_outputs * norm_weights).sum(dim=2) # (b, prompt_size, d_model)
+        assert all(abs(self.norm_weights.sum(1)- 1.0) < 0.0001)
+
+        prompt_output = (layer_prompt_outputs * self.norm_weights).sum(dim=2) # (b, prompt_size, d_model)
         assert prompt_output.size(1) == self.prompt_size
 
         prompt_output = self.modality_adapter.proj(prompt_output) # (b, prompt_size, hidden_size)

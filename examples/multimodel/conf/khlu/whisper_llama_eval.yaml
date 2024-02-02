@@ -103,6 +103,9 @@ model:
 
   data:
     test_ds:
+      prompt_size: ${perception.prompt_size}
+      mode: ${perception.mode}
+
       manifest_filepath: ??? # Path to a list of JSONL files corresponding to the source data. Data format is identical to train_ds.
       names: null # Names of the corresponding datasets used to log metrics.
       global_batch_size: 1
