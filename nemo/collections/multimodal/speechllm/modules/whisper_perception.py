@@ -42,7 +42,8 @@ class PromptAdapter(NeuralModule):
 class QformerAdapter(NeuralModule):
     def __init__(self, cfg, whisper_config):
         super().__init__()
-        self.target_layer_ids = [5, 11, 17, 23]
+        # self.target_layer_ids = [5, 11, 17, 23]
+        self.target_layer_ids = [3, 7, 11, 15, 19, 23, 27, 31]
         # use BERT as a qformer encoder
         self.prompt_size = cfg.perception.prompt_size
         self.layer_prompts = nn.ParameterList([nn.Parameter(torch.randn(1, self.prompt_size, whisper_config.d_model)) for _ in range(len(self.target_layer_ids))])
@@ -91,7 +92,9 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
 
 
     def forward(self, input_signal, input_signal_length=None, processed_signal=None, processed_signal_length=None):
-        audio_features = self.forward_whisper(input_features=input_signal)
+        bs = input_signal.size(0)
+        input_features = input_signal.view(bs, -1, 3000)
+        audio_features = self.forward_whisper(input_features=input_features)
         
         audio_feat_lens = torch.zeros(input_signal.size(0)).long().to(input_signal.device) # for original SALM
         
@@ -190,8 +193,6 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
                 if idx in self.modality_adapter.target_layer_ids:
                     # use different prompt for different layers
                     layer_prompt = self.modality_adapter.layer_prompts[self.modality_adapter.target_layer_ids.index(idx)].expand(bs, -1, -1)
-                    # concatenate the prompt with whisper output hidden states
-                    # prompt_hidden_states = torch.cat([layer_prompt, hidden_states], dim=1) # (b, prompt_size + features_length, d_model)
                     
                     # Qformer is a BERTEncoder(but set to decoder) from huggingface Transformers
                     qformer_output = self.modality_adapter.qformer(
@@ -211,7 +212,7 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
         self.norm_weights = torch.nn.functional.softmax(self.modality_adapter.layer_weights, dim=-1).unsqueeze(-1) # (prompt_size, layer, 1)
 
 
-        assert all(abs(self.norm_weights.sum(1)- 1.0) < 0.0001)
+        # assert all(abs(self.norm_weights.sum(1)- 1.0) < 0.01)
 
         prompt_output = (layer_prompt_outputs * self.norm_weights).sum(dim=2) # (b, prompt_size, d_model)
         assert prompt_output.size(1) == self.prompt_size

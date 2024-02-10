@@ -53,7 +53,7 @@ __all__ = [
 
 # @kehan
 from nemo.collections.multimodal.speechllm.data.audio_text_qa_dataset import (
-    TextProcessing, _audio_text_collate_fn
+    TextProcessing, _build_loss_mask, _collate_item, _audio_text_collate_fn
 )
 from transformers import WhisperProcessor
 
@@ -250,13 +250,8 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
                 orig_sr=sample.orig_sr,
                 channel_selector=self.channel_selector,
             )
-
-            # features = torch.cat(
-            #     [torch.tensor(features[:14*16000]), torch.zeros(16000)]
-            # )
-            
             features = self.whisper_processor(
-                features, sampling_rate=16000, return_tensors="pt").input_features.squeeze(0) # @kehan
+                features, sampling_rate=16000, return_tensors="pt").input_features.squeeze(0).view(-1)
 
             f, fl = features, torch.tensor(features.shape[0]).long()
             output["audio_signal"] = f
@@ -423,7 +418,6 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
             'answer_ids': answer_ids,
             'context_start_idx': context_start_idx,
         }
-        # logging.info(processed_example)
 
         return processed_example
     
@@ -520,7 +514,7 @@ def get_whisper_llama_dataset_from_config(
             question_file=question_file,
             audio_locator=config.get('audio_locator', None),
 
-            pretrained_audio_model=config.get("pretrained_audio_model", "openai/whisper-medium"),
+            pretrained_audio_model=config.get("pretrained_audio_model", "openai/whisper-large-v3"),
             prompt_size=config.get("prompt_size", 32),
             # kehan
         )

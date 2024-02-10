@@ -197,7 +197,8 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
         if self.cfg.get("sequence_parallel", False):
             input_embeddings = tensor_parallel.mappings.scatter_to_sequence_parallel_region(input_embeddings)
 
-        encoder_length = 0 # dummy
+        # encoder_length = 0 # dummy
+        encoder_length = torch.zeros(input_embeddings.size(0)).long().to(input_embeddings.device)
         return input_embeddings, attention_mask, encoder_length, position_ids, encoder_max_length
 
     def setup_optimizer_param_groups(self):
