@@ -204,7 +204,7 @@ model:
       shuffle: False
       num_workers: 4
       pin_memory: True
-      max_seq_length: 384
+      max_seq_length: 256
       min_seq_length: 1
       drop_last: False
       context_key: ${model.data.train_ds.context_key}
@@ -214,8 +214,8 @@ model:
       add_sep: ${model.data.train_ds.add_sep}
       add_bos: ${model.data.train_ds.add_bos}
       separate_prompt_and_response_with_newline: ${model.data.train_ds.separate_prompt_and_response_with_newline}
-      write_predictions_to_file: False
-      output_file_path_prefix: True # Prefix of the file to write predictions to.
+      write_predictions_to_file: True
+      output_file_path_prefix: "pred" # Prefix of the file to write predictions to.
       truncation_field: "context" # Options: ['context', 'answer']
       index_mapping_dir: null # Path to a directory to write index mapping files.
       prompt_template: ${model.data.train_ds.prompt_template} # fstring to use for assistant prompt. Example: "Q: {input}\nA: {output}"

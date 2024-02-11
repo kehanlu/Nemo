@@ -11,8 +11,8 @@ MEGATRON_CKPT=/NeMo/data/llama2-7b-chat.nemo
 # ASR_MODEL="ssl_en_conformer_large"
 # ASR_MODEL="stt_en_fastconformer_transducer_large"
 ASR_MODEL="openai/whisper-large-v3" # huggingface id
-GLOBAL_BATCH=2
-MICRO_BATCH=2
+GLOBAL_BATCH=4
+MICRO_BATCH=4
 
 # TRAIN_MANIFESTS=/NeMo/data/PromptTTS/test.jsonl
 # TRAIN_MANIFESTS=/NeMo/data/PromptTTS/manifest.nq.caption.jsonl
@@ -25,12 +25,9 @@ train_questions=[/NeMo/data/PromptTTS/manifest.caption.question.txt,/NeMo/data/P
 valid_questions=[/NeMo/data/PromptTTS/manifest.caption.question.txt,/NeMo/data/PromptTTS/manifest.caption.question.txt,/NeMo/data/PromptTTS/manifest.caption.question.txt]
 
 # exp_name="llama7B-whisperB/attr"
-exp_name="0209-llama7B-whisperL-caption"
+exp_name="llama7B-whisperL/0211-caption2-nooversample"
 devices=2
 perception_mode="qformer_1"
-
-restore_from_path=/NeMo/workspace/nemo_experiments/0209-llama7B-whisperL-caption/checkpoints/mp_rank_00/0209-llama7B-whisperL-caption--validation_loss\=2.249-step\=264525-epoch\=0.ckpt
-restore_from_hparams_path=/NeMo/workspace/nemo_experiments/0209-llama7B-whisperL-caption/version_3/hparams.yaml
 
 NCCL_DEBUG=WARN CUDA_VISIBLE_DEVICES=0,1 python \
 run_sft_whisper_llama.py --config-path="../examples/multimodel/conf/khlu/" --config-name "whisper_llama_config_7b.yaml" \
@@ -45,7 +42,8 @@ run_sft_whisper_llama.py --config-path="../examples/multimodel/conf/khlu/" --con
     ++model.data.validation_ds.question_file=$valid_questions \
     ++model.data.validation_ds.random_context_prob=0 \
     ++model.data.validation_ds.random_context_num=0 \
-    model.data.validation_ds.output_file_path_prefix=$exp_name/ \
+    ++model.data.validation_ds.output_file_path_prefix=$exp_name/ \
+    ++model.data.validation_ds.write_predictions_to_file=True \
     model.data.train_ds.manifest_filepath=$TRAIN_MANIFESTS \
     model.data.validation_ds.manifest_filepath=$VAL_MANIFESTS \
     ++model.tensor_model_parallel_size=2 \

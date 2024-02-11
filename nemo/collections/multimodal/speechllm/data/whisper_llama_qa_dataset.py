@@ -493,7 +493,7 @@ def get_whisper_llama_dataset_from_config(
             add_eos=config.get('add_eos', True),
             add_sep=config.get('add_sep', False),
             sep_id=sep_id,
-            max_num_samples=num_samples[0],
+            max_num_samples=None, # kehan
             seed=config.get('seed', 1234),
             separate_prompt_and_response_with_newline=config.get('separate_prompt_and_response_with_newline', True),
             answer_only_loss=answer_only_loss,
