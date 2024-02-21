@@ -785,8 +785,10 @@ class WhisperLlamaSpeechText(object):
         self.data = data
 
     def __getitem__(self, idx):
-        if idx < 0 or idx > len(self.data):
-            raise ValueError(f"index out of range [0,{len(self.data)}), got {idx} instead")
+        if idx < 0 or idx >= len(self.data):
+            idx = idx % len(self.data)
+            logging.warning(f"index out of range [0,{len(self.data)}), got {idx} instead")
+            # raise ValueError(f"index out of range [0,{len(self.data)}), got {idx} instead")
         return self.data[idx]
 
     def __len__(self):
