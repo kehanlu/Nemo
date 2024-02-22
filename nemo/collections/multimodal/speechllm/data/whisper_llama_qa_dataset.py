@@ -320,7 +320,7 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
             )
             # Replace the input and output placeholders with the actual input and output
             text = self.prompt_template.replace(f'{{{self.input_key}}}', original_context).replace(
-                f'{{{self.output_key}}}', output
+                f'{{{self.output_key}}}', str(output)
             )
 
         elif self.separate_prompt_and_response_with_newline:
@@ -450,10 +450,7 @@ def get_whisper_llama_dataset_from_config(
         # that is of the format [weight1,file_name1,weight2,file_name2,...]
         concat_sampling_probabilities = config.get('concat_sampling_probabilities', None)
         if concat_sampling_probabilities is None:
-            # kehan
-            num_samples_per_dataset = get_num_samples_from_files(manifest_filepath)
-            concat_sampling_probabilities = [n/sum(num_samples_per_dataset) for n in num_samples_per_dataset]
-            # concat_sampling_probabilities = [1.0 / len(manifest_filepath)] * len(manifest_filepath)
+            concat_sampling_probabilities = [1.0 / len(manifest_filepath)] * len(manifest_filepath)
         elif len(config.get('concat_sampling_probabilities', None)) != len(manifest_filepath):
             raise ValueError(
                 (
@@ -467,9 +464,7 @@ def get_whisper_llama_dataset_from_config(
             data_prefix.append(prefix)
 
         num_samples_per_dataset = get_num_samples_from_files(manifest_filepath)
-        # num_train_samples = [len(manifest_filepath) * max(num_samples_per_dataset)]
-        # kehan
-        num_train_samples = [sum(num_samples_per_dataset)]
+        num_train_samples = [len(manifest_filepath) * max(num_samples_per_dataset)]
         _, _, num_train_samples_per_dataset = get_datasets_weights_and_num_samples(data_prefix, num_train_samples)
         num_train_samples_after_blend = sum([x[0] for x in num_train_samples_per_dataset])
     else:
