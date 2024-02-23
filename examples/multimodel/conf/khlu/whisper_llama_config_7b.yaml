@@ -182,7 +182,7 @@ model:
       # prompt_template: "<|system|>\nYou are a speech assistant.</s>\n <|user|>\n {input} </s>\n <|assistant|>\n {output}"
       # ASR configs
       sample_rate: 16000 #${model.audio_encoder.preprocessor.sample_rate}
-      max_duration: 24 # it is set for LibriSpeech, you may need to update it for your dataset
+      max_duration: 31 # it is set for LibriSpeech, you may need to update it for your dataset
       min_duration: 0.1
       # tarred datasets
       is_tarred: false

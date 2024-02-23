@@ -174,8 +174,9 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
         random_context_positive_percent: Optional[float] = 0.1,
         sample_alpha: Optional[float] = None,
         audio_locator: Optional[str] = None,
-        pretrained_audio_model: Optional[str] = None,
-        prompt_size=32,
+        pretrained_audio_model: Optional[str] = None, # kehan
+        prompt_size=32, # kehan
+        random_transcription_prob: Optional[float] = 0.0,
     ):
         super().__init__(
             tokenizer=tokenizer,
@@ -219,6 +220,7 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
             random_context_num=random_context_num,
             random_context_positive_percent=random_context_positive_percent,
             random_context_prob=random_context_prob,
+            random_transcription_prob=random_transcription_prob
         )
         self.hf_model_id = pretrained_audio_model # openai/whisper-
         self.featurizer = WaveformFeaturizer(sample_rate=sample_rate, int_values=int_values, augmentor=augmentor)
@@ -514,10 +516,12 @@ def get_whisper_llama_dataset_from_config(
             question_file=question_file,
             audio_locator=config.get('audio_locator', None),
 
+            # kehan
             pretrained_audio_model=config.get("pretrained_audio_model", "openai/whisper-large-v3"),
             prompt_size=config.get("prompt_size", 32),
-            # kehan
+            random_transcription_prob=config.get('random_transcription_prob', 0.0)
         )
+        
         if config.get("pretrained_audio_model") is None:
             logging.warning("No pretrained audio model is set.")
         datasets.append(dataset)

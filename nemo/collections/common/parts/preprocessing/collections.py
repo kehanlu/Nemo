@@ -806,6 +806,7 @@ class WhisperLlamaCollection(WhisperLlamaSpeechText):
             random_context_prob: Optional[float] = None,
             random_context_num: Optional[int] = 3,
             random_context_positive_percent: Optional[float] = 0.1,
+            random_transcription_prob=0.0, # kehan
             *args,
             **kwargs,
     ):
@@ -841,6 +842,11 @@ class WhisperLlamaCollection(WhisperLlamaSpeechText):
         self.random_context_num = random_context_num
         self.random_context_positive_percent = random_context_positive_percent
         self.random_context = []
+        
+        # kehan
+        self.random_transcription_prob = random_transcription_prob
+        logging.info(f"random_transcription_prob: {self.random_transcription_prob}")
+
         for item in manifest.item_iter(manifests_files, parse_func=self.__parse_item):
             ids.append(item['id'])
             audio_files.append(item['audio_file'])
@@ -916,6 +922,10 @@ class WhisperLlamaCollection(WhisperLlamaSpeechText):
                     question = context + question
                 self.random_context = current_words
             item['question'] = question
+
+        # random drop transcription field
+        if np.random.random() < self.random_transcription_prob:
+            item["question"] = item["question"].replace("{transcription}", "")
 
         # transcription
         if 'transcription' not in item:
