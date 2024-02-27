@@ -225,6 +225,8 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
         self.hf_model_id = pretrained_audio_model # openai/whisper-
         self.featurizer = WaveformFeaturizer(sample_rate=sample_rate, int_values=int_values, augmentor=augmentor)
         self.whisper_processor = WhisperProcessor.from_pretrained(self.hf_model_id)
+        logging.info(f"use {pretrained_audio_model} processor")
+        
         self.trim = trim
         self.channel_selector = channel_selector
         self.prompt_size = prompt_size

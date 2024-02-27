@@ -17,11 +17,23 @@ from nemo.utils import logging
 
 
 # @kehan
-from transformers import WhisperModel, BertConfig
+from transformers import WhisperModel, BertConfig, WhisperForConditionalGeneration
 from transformers.models.bert.modeling_bert import BertEncoder
 
 __all__ = ["WhisperPerceptionModel"]
 
+class RMSNorm(torch.nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def _norm(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        output = self._norm(x.float()).type_as(x)
+        return output * self.weight
 
 class PromptAdapter(NeuralModule):
     def __init__(self, cfg, whisper_config):
@@ -42,13 +54,29 @@ class PromptAdapter(NeuralModule):
 class QformerAdapter(NeuralModule):
     def __init__(self, cfg, whisper_config):
         super().__init__()
-        # self.target_layer_ids = [5, 11, 17, 23]
-        self.target_layer_ids = [3, 7, 11, 15, 19, 23, 27, 31]
+        
+        # mode
+        self.mode = cfg.perception.mode
+        self.pretrained_audio_model = cfg.pretrained_audio_model
+
+        if self.pretrained_audio_model == "openai/whisper-medium":
+            self.target_layer_ids = [5, 11, 17, 23]
+        else:
+            self.target_layer_ids = [3, 7, 11, 15, 19, 23, 27, 31]
+        
         # use BERT as a qformer encoder
         self.prompt_size = cfg.perception.prompt_size
         self.layer_prompts = nn.ParameterList([nn.Parameter(torch.randn(1, self.prompt_size, whisper_config.d_model)) for _ in range(len(self.target_layer_ids))])
         
-        self.layer_weights = nn.Parameter(torch.zeros(self.prompt_size, len(self.target_layer_ids), dtype=torch.float)) # (prompt_size, encoder_layers)
+        # Qformer weights
+        if self.mode == "qformer_1":
+            # (prompt_size, target_layers)
+            self.layer_weights = nn.Parameter(torch.zeros(self.prompt_size, len(self.target_layer_ids))) 
+        elif self.mode == "qformer_2":
+            # (target_layers)
+            self.layer_weights = nn.Parameter(torch.zeros(len(self.target_layer_ids))) 
+        else:
+            raise NotImplementedError("mode not implemented.")
 
 
         qformer_config = BertConfig()
@@ -64,18 +92,39 @@ class QformerAdapter(NeuralModule):
                 nn.Linear(whisper_config.d_model, cfg.hidden_size) # project to llama hidden size
             )
 
+class CNNDownsampleAdapter(NeuralModule):
+    def __init__(self, cfg, whisper_config):
+        super().__init__()
+
+        self.mode = cfg.perception.mode
+        self.pretrained_audio_model = cfg.pretrained_audio_model
+
+        if self.pretrained_audio_model == "openai/whisper-medium":
+            self.target_layer_ids = [5, 11, 17, 23]
+        else:
+            self.target_layer_ids = [3, 7, 11, 15, 19, 23, 27, 31]
+
+        self.cnn1 = nn.Conv1d(whisper_config.d_model, whisper_config.d_model, kernel_size=10, stride=5, padding=1)
+        self.cnn2 = nn.Conv1d(whisper_config.d_model, whisper_config.d_model, kernel_size=10, stride=5, padding=3)
+        self.proj = nn.Linear(whisper_config.d_model, cfg.hidden_size)
+
+        self.proj = nn.Sequential(
+                nn.Linear(whisper_config.d_model, cfg.hidden_size), # project to llama hidden size
+                RMSNorm(cfg.hidden_size)
+            )
+
+        self.layer_weights = nn.Parameter(torch.zeros(len(self.target_layer_ids))) 
 
         
 class WhisperPerceptionModel(NeuralModule, Exportable):
     def __init__(self, cfg):
         super().__init__()
         logging.info(cfg)
-        whisper_model = WhisperModel.from_pretrained(
+        whisper_model = WhisperForConditionalGeneration.from_pretrained(
             cfg.pretrained_audio_model # model_name_or_path
         )
         logging.info(f"Loaded whisper model from {cfg.pretrained_audio_model}")
-
-        self.encoder = whisper_model.encoder
+        self.encoder = whisper_model.model.encoder
 
         # todo: add prompt based on cfg
         self.prompt_size = cfg.perception.prompt_size
@@ -87,12 +136,15 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
             self.modality_adapter = PromptAdapter(cfg, whisper_config=whisper_model.config)
         elif self.mode.startswith("qformer_"):
             self.modality_adapter = QformerAdapter(cfg, whisper_config=whisper_model.config)
+        elif self.mode.startswith("cnn_"):
+            self.modality_adapter = CNNDownsampleAdapter(cfg, whisper_config=whisper_model.config)
         else:
             raise NotImplementedError("mode not implemented")
 
 
     def forward(self, input_signal, input_signal_length=None, processed_signal=None, processed_signal_length=None):
         bs = input_signal.size(0)
+
         input_features = input_signal.view(bs, -1, 3000)
         audio_features = self.forward_whisper(input_features=input_features)
         
@@ -178,7 +230,7 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
                 assert hidden_states.size(1) == features_length
 
                 layer_prompt_outputs.append(layer_prompt_output)
-        elif self.mode == "qformer_1":
+        elif self.mode == "qformer_1" or self.mode == "qformer_2":
             layer_prompt_outputs = []
             for idx, encoder_layer in enumerate(self.encoder.layers):
                 
@@ -202,20 +254,45 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
 
                     layer_prompt_output = qformer_output.last_hidden_state # (b, prompt_size, d_model)
                     layer_prompt_outputs.append(layer_prompt_output) # list of (b, prompt_size, d_model)
+        elif self.mode == "cnn_1":
+            layer_prompt_outputs = []
+            for idx, encoder_layer in enumerate(self.encoder.layers):
 
+                layer_outputs = encoder_layer(
+                    hidden_states,
+                    attention_mask=None,
+                    layer_head_mask=None,
+                    output_attentions=None,
+                )
+                hidden_states = layer_outputs[0]
+
+                if idx in self.modality_adapter.target_layer_ids:
+                    
+                    # CNN downsample
+                    cnn_output = self.modality_adapter.cnn1(
+                        hidden_states.transpose(1, 2).contiguous()
+                    )
+                    cnn_output = self.modality_adapter.cnn2(cnn_output).transpose(1, 2).contiguous()
+                    
+                    layer_prompt_output = cnn_output # (b, prompt_size, d_model)
+                    layer_prompt_outputs.append(layer_prompt_output) # list of (b, prompt_size, d_model)
         else:
             raise NotImplementedError(f"mode {self.mode} not implemented")
 
         layer_prompt_outputs = torch.stack(layer_prompt_outputs, dim=0) # (layer, b, prompt_size, d_model)
         layer_prompt_outputs = layer_prompt_outputs.permute(1, 2, 0, 3) # (b, prompt_size, layer, d_model)
 
-        self.norm_weights = torch.nn.functional.softmax(self.modality_adapter.layer_weights, dim=-1).unsqueeze(-1) # (prompt_size, layer, 1)
-
-
-        # assert all(abs(self.norm_weights.sum(1)- 1.0) < 0.01)
-
+        if self.mode in ["qformer_1", "prompt_1", "prompt_2"]:
+            self.norm_weights = torch.nn.functional.softmax(self.modality_adapter.layer_weights, dim=-1).unsqueeze(-1) # (prompt_size, layer, 1)
+        elif self.mode in ["qformer_2", "cnn_1"]:
+            # (b, prompt_size, layer, 1)
+            # layer_weights
+            self.norm_weights = torch.nn.functional.softmax(self.modality_adapter.layer_weights, dim=-1).view(1, 1, -1, 1)
+        else:
+            raise NotImplementedError()
+        
         prompt_output = (layer_prompt_outputs * self.norm_weights).sum(dim=2) # (b, prompt_size, d_model)
-        assert prompt_output.size(1) == self.prompt_size
+        assert prompt_output.size(1) == self.prompt_size, prompt_output.size()
 
         prompt_output = self.modality_adapter.proj(prompt_output) # (b, prompt_size, hidden_size)
 

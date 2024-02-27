@@ -139,10 +139,10 @@ model:
 
   data:
     end_string: "</s>"
-    pretrained_audio_model: ${model.pretrained_audio_model}
 
     train_ds:
       prompt_size: ${model.perception.prompt_size}
+      pretrained_audio_model: ${model.pretrained_audio_model}
 
       # Example of how to specify paths to multiple datasets
       # manifest_filepath:
@@ -156,7 +156,7 @@ model:
       global_batch_size: ${model.global_batch_size}
       micro_batch_size: ${model.micro_batch_size}
       shuffle: True
-      num_workers: 4
+      num_workers: 8
       pin_memory: True
       max_seq_length: 256
       min_seq_length: 1
@@ -197,6 +197,7 @@ model:
 
     validation_ds:
       prompt_size: ${model.perception.prompt_size}
+      pretrained_audio_model: ${model.pretrained_audio_model}
 
       manifest_filepath: ??? # Path to a list of JSONL files corresponding to the source data. Data format is identical to train_ds.
       global_batch_size: ${model.global_batch_size}
