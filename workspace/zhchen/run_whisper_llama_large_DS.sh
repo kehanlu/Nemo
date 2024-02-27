@@ -12,7 +12,7 @@ MEGATRON_CKPT=/NeMo/data/llama2-7b-chat.nemo
 TRAIN_MANIFESTS=/NeMo/data/dynamic-superb/0228_train.jsonl
 VAL_MANIFESTS=/NeMo/data/dynamic-superb/0228_val.50.jsonl
 
-exp_name="llama7B-whisperL-DSFT/0228_train.jsonl"
+exp_name="llama7B-whisperL-DSFT/0228_train"
 
 # Configs
 GLOBAL_BATCH=12
