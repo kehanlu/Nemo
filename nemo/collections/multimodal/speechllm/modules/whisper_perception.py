@@ -141,6 +141,12 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
         else:
             raise NotImplementedError("mode not implemented")
 
+        # kehan: the encoder is freezed and only modality_adapter will update
+        self.modality_adapter.audio_segment_emb = nn.Embedding(1, cfg.hidden_size)
+        
+        logging.info(f"Using modality adapter: {self.modality_adapter}")
+        logging.info(f"target_layer_ids: {self.modality_adapter.target_layer_ids}")
+
 
     def forward(self, input_signal, input_signal_length=None, processed_signal=None, processed_signal_length=None):
         bs = input_signal.size(0)
@@ -295,6 +301,8 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
         assert prompt_output.size(1) == self.prompt_size, prompt_output.size()
 
         prompt_output = self.modality_adapter.proj(prompt_output) # (b, prompt_size, hidden_size)
+
+        prompt_output = prompt_output + self.modality_adapter.audio_segment_emb.weight[0]
 
         return prompt_output
 
