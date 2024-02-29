@@ -113,7 +113,7 @@ class CNNDownsampleAdapter(NeuralModule):
                 RMSNorm(cfg.hidden_size)
             )
 
-        self.layer_weights = nn.Parameter(torch.zeros(len(self.target_layer_ids)), data=torch.float)
+        self.layer_weights = nn.Parameter(torch.zeros(len(self.target_layer_ids), dtype=torch.float))
 
         
 class WhisperPerceptionModel(NeuralModule, Exportable):
