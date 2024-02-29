@@ -564,7 +564,7 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             self.if_first_step = 1
 
         # kehan
-        for layer_id, weight in enumerate(self.perception.modality_adapter.layer_weights.softmax(-1).view(-1).cpu().tolist()):
+        for layer_id, weight in enumerate(self.perception.modality_adapter.layer_weights.softmax(-1).view(-1).clone().detach().cpu().tolist()):
             self.log(f"layer_weights-{layer_id}", weight, prog_bar=True, rank_zero_only=True, batch_size=1)
 
         return loss_mean

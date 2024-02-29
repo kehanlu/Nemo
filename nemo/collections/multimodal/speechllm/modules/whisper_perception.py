@@ -71,10 +71,10 @@ class QformerAdapter(NeuralModule):
         # Qformer weights
         if self.mode == "qformer_1":
             # (prompt_size, target_layers)
-            self.layer_weights = nn.Parameter(torch.zeros(self.prompt_size, len(self.target_layer_ids))) 
+            self.layer_weights = nn.Parameter(torch.zeros(self.prompt_size, len(self.target_layer_ids), dtype=torch.float))
         elif self.mode == "qformer_2":
             # (target_layers)
-            self.layer_weights = nn.Parameter(torch.zeros(len(self.target_layer_ids))) 
+            self.layer_weights = nn.Parameter(torch.zeros(len(self.target_layer_ids), dtype=torch.float))
         else:
             raise NotImplementedError("mode not implemented.")
 
@@ -113,7 +113,7 @@ class CNNDownsampleAdapter(NeuralModule):
                 RMSNorm(cfg.hidden_size)
             )
 
-        self.layer_weights = nn.Parameter(torch.zeros(len(self.target_layer_ids))) 
+        self.layer_weights = nn.Parameter(torch.zeros(len(self.target_layer_ids)), data=torch.float)
 
         
 class WhisperPerceptionModel(NeuralModule, Exportable):
