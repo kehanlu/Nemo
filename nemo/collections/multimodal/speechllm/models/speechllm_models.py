@@ -1218,7 +1218,7 @@ class ModularAudioGPTLoRAModel(MegatronGPTLoRAModel):
                 output_dir = data_cfg.get("output_dir", "./")
                 self.file_index = getattr(self, "file_index", -1) + 1
                 self.write_predictions_to_file(
-                    deduplicated_outputs, f"{data_cfg.output_file_path_prefix}_{filename_log_key}_{self.file_index}", output_dir
+                    deduplicated_outputs, f"{data_cfg.output_file_path_prefix}_{filename_log_key}_{self.file_index}@step={self.trainer.global_step}", output_dir
                 )
 
             torch.distributed.barrier(group=parallel_state.get_data_parallel_group())
