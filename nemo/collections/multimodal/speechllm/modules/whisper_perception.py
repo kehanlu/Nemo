@@ -275,10 +275,8 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
                 if idx in self.modality_adapter.target_layer_ids:
                     
                     # CNN downsample
-                    cnn_output = self.modality_adapter.cnn1(
-                        hidden_states.transpose(1, 2).contiguous()
-                    )
-                    cnn_output = self.modality_adapter.cnn2(cnn_output).transpose(1, 2).contiguous()
+                    cnn_output = self.modality_adapter.cnn1(hidden_states.transpose(1, 2)).transpose(1, 2)
+                    cnn_output = self.modality_adapter.cnn2(cnn_output.transpose(1, 2)).transpose(1, 2)
                     
                     layer_prompt_output = cnn_output # (b, prompt_size, d_model)
                     layer_prompt_outputs.append(layer_prompt_output) # list of (b, prompt_size, d_model)
@@ -302,7 +300,7 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
 
         prompt_output = self.modality_adapter.proj(prompt_output) # (b, prompt_size, hidden_size)
 
-        prompt_output = prompt_output + self.modality_adapter.audio_segment_emb.weight[0]
+        # prompt_output = prompt_output + self.modality_adapter.audio_segment_emb.weight[0]
 
         return prompt_output
 
