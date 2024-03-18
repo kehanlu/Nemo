@@ -143,6 +143,8 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
 
         # kehan: the encoder is freezed and only modality_adapter will update
         self.modality_adapter.audio_segment_emb = nn.Embedding(1, cfg.hidden_size)
+        self.modality_adapter.audio_segment_emb.weight = nn.Parameter(torch.zeros_like(self.modality_adapter.audio_segment_emb.weight))
+
         
         logging.info(f"Using modality adapter: {self.modality_adapter}")
         logging.info(f"target_layer_ids: {self.modality_adapter.target_layer_ids}")
@@ -300,7 +302,7 @@ class WhisperPerceptionModel(NeuralModule, Exportable):
 
         prompt_output = self.modality_adapter.proj(prompt_output) # (b, prompt_size, hidden_size)
 
-        # prompt_output = prompt_output + self.modality_adapter.audio_segment_emb.weight[0]
+        prompt_output = prompt_output + self.modality_adapter.audio_segment_emb.weight[0]
 
         return prompt_output
 

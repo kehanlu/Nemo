@@ -349,6 +349,8 @@ class WhisperLlamaDataset(TextProcessing, Dataset):
             context_start_idx = [0]
 
         elif self.audio_locator == "|audio_prompt|":
+            if len(context.split(self.audio_locator)) != 2:
+                logging.warning(context)
             # @kehan: only one audio_locator
             left = context.split(self.audio_locator)[0]
             right = context.split(self.audio_locator)[1]
