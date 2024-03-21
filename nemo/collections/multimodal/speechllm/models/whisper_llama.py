@@ -359,6 +359,7 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             base_model_save_restore_connector.model_extracted_dir = cfg.model.restore_from_path
         
         # llama
+        logging.info(f"restore_from_path: {cfg.model.restore_from_path}")
         base_model_cfg = cls.restore_from(
             restore_path=cfg.model.restore_from_path,
             trainer=trainer,
@@ -565,6 +566,6 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
 
         # kehan
         for layer_id, weight in enumerate(self.perception.modality_adapter.layer_weights.softmax(-1).view(-1).clone().detach().cpu().tolist()):
-            self.log(f"layer_weights-{layer_id}", weight, prog_bar=True, rank_zero_only=True, batch_size=1)
+            self.log(f"layer_weights/{layer_id}", weight, prog_bar=True, rank_zero_only=True, batch_size=1)
 
         return loss_mean
