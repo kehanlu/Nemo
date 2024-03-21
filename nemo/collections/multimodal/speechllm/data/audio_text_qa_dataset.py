@@ -122,6 +122,7 @@ def _collate_item(item: Union[torch.Tensor, np.ndarray, List], max_length: int, 
 def _audio_text_collate_fn(
     batch: Dict, tokens_to_generate: int, pad_to_max_length: bool, max_seq_length: int, text_pad_id: int,
 ):
+    # logging.info(f"tokens_to_generate: {tokens_to_generate}")
     sample_ids = [x["idx"] for x in batch]
     sample_ids = torch.tensor(sample_ids, dtype=torch.int32)
 
@@ -138,12 +139,14 @@ def _audio_text_collate_fn(
     loss_mask = [_build_loss_mask(item)[1:] for item in batch]
 
     max_length = max([len(x) for x in input_ids]) + tokens_to_generate
+    # logging.info(max_length)
     # increase max length to nearest multiple of 4 or 8
     if pad_to_max_length:
         max_length = max_seq_length
     else:
         max_length = min(max_seq_length, ceil_to_nearest(max_length, 8))
     assert max_length <= max_seq_length
+    # logging.info(max_length)
 
     position_ids = [list(range(max_length)) for _ in batch]
     position_ids = torch.LongTensor(position_ids)
@@ -153,7 +156,13 @@ def _audio_text_collate_fn(
     loss_mask = torch.LongTensor(_collate_item(loss_mask, max_length=max_length, pad_id=0))
     contexts = torch.LongTensor(_collate_item(contexts, max_length=max_length, pad_id=text_pad_id))
     answers = torch.LongTensor(_collate_item(answers, max_length=max_length, pad_id=text_pad_id))
-
+    
+    # logging.info(contexts[0])
+    # logging.info(input_ids[0])
+    # logging.info(answers[0])
+    # logging.info(position_ids[0])
+    # logging.info("="*100)
+    
     batch = {
         'sample_ids': sample_ids,
         'audio_signal': audio_signal,
@@ -529,6 +538,7 @@ class AudioQuestionAnswerDataset(TextProcessing, Dataset):
                 orig_sr=sample.orig_sr,
                 channel_selector=self.channel_selector,
             )
+            
             f, fl = features, torch.tensor(features.shape[0]).long()
             output["audio_signal"] = f
             output["audio_length"] = fl

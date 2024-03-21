@@ -22,6 +22,9 @@ from nemo.core.config import hydra_runner
 from nemo.utils import logging
 from nemo.utils.exp_manager import exp_manager
 
+# kehan
+from nemo.collections.multimodal.speechllm.models.whisper_llama import WhisperLlamaModel
+
 mp.set_start_method("spawn", force=True)
 
 """
@@ -61,7 +64,7 @@ def main(cfg) -> None:
     with open_dict(cfg):
         cfg.model.precision = cfg.trainer.precision
         
-    model = ModularAudioGPTLoRAModel.restore_from_pretrained_models(cfg, trainer=trainer)
+    model = WhisperLlamaModel.restore_from_pretrained_models(cfg, trainer=trainer)
 
     trainer.fit(model)
 
