@@ -379,6 +379,7 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             base_model_save_restore_connector.model_extracted_dir = cfg.model.restore_from_path
         
         # llama
+        logging.info(f"restore_from_path: {cfg.model.restore_from_path}")
         base_model_cfg = cls.restore_from(
             restore_path=cfg.model.restore_from_path,
             trainer=trainer,
