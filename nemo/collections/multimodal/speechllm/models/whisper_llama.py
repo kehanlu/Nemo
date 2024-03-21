@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Union
 
 import sacrebleu
 import torch
+from torch import nn
 from hydra.utils import get_class
 from omegaconf import ListConfig
 from omegaconf.dictconfig import DictConfig
@@ -81,6 +82,9 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
         super().__init__(cfg, trainer)
         self.perception = WhisperPerceptionModel(cfg)
 
+        if self.cfg.peft.get("prefix_size"):
+            self.prefix_prompt = nn.Parameter(torch.randn(1, self.cfg.peft.prefix_size, cfg.hidden_size))
+
         self.setup_optimizer_param_groups()
         self.configure_optimizers()
         self.summarize(max_depth=2)
@@ -143,6 +147,16 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             audio_features=audio_features, input_ids=input_ids, 
         )
 
+        if not self.cfg.peft.get("prefix_size") is None:
+            labels = torch.cat([
+                torch.zeros(labels.size(0), self.cfg.peft.prefix_size).long().to(labels.device), labels
+            ], dim=1)
+            loss_mask = torch.cat([
+                torch.zeros(loss_mask.size(0), self.cfg.peft.prefix_size).long().to(loss_mask.device), loss_mask
+            ], dim=1)
+            assert input_embeddings.size(0) == labels.size(1), (input_embeddings.size(), labels.size())
+
+
         return input_embeddings, attention_mask, labels, loss_mask, encoder_length
         
     
@@ -154,6 +168,7 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
                                 input_lengths=None,
                                 context_start_idx=None
                                 ):
+        bs = audio_features.size(0)
         # replace input_ids with audio_features
         # the input_ids is pad with [-42]*prompt_size to indicate the audio prompt
         # and 0 is the index of unk token
@@ -178,6 +193,11 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
             modified_embeddings.append(modified_embedding)
 
         input_embeddings = torch.stack(modified_embeddings, dim=0).contiguous()
+
+        # kehan: prefix prompt
+        if not self.cfg.peft.get("prefix_size") is None:
+            input_embeddings = torch.cat([self.prefix_prompt.expand(bs, self.cfg.peft.prefix_size, -1), input_embeddings], dim=1)
+
 
         attention_mask = self._create_attention_mask(input_embeddings)
         position_ids = build_position_ids(input_embeddings[:, :, 0])
@@ -565,6 +585,6 @@ class WhisperLlamaModel(ModularAudioGPTLoRAModel):
 
         # kehan
         for layer_id, weight in enumerate(self.perception.modality_adapter.layer_weights.softmax(-1).view(-1).clone().detach().cpu().tolist()):
-            self.log(f"layer_weights-{layer_id}", weight, prog_bar=True, rank_zero_only=True, batch_size=1)
+            self.log(f"layer_weights/{layer_id}", weight, prog_bar=True, rank_zero_only=True, batch_size=1)
 
         return loss_mean
