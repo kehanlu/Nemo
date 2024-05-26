@@ -1,3 +1,7 @@
+transformersgit /
+peft/
+workspace/
+
 # log and data files
 *.model
 *.pkl
