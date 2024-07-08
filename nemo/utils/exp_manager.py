@@ -409,7 +409,7 @@ def exp_manager(trainer: 'pytorch_lightning.Trainer', cfg: Optional[Union[DictCo
     nemo_testing = get_envbool(NEMO_ENV_VARNAME_TESTING, False)
 
     # Handle logging to file
-    log_file = log_dir / f'nemo_log_globalrank-{global_rank}_localrank-{local_rank}.txt'
+    log_file = log_dir / f'nemo_log_globalrank-{global_rank}_localrank-{local_rank}.log'
     if cfg.log_local_rank_0_only is True and not nemo_testing:
         if local_rank == 0:
             logging.add_file_handler(log_file)

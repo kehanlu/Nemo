@@ -16,12 +16,12 @@ import os
 from typing import List, Optional
 
 from transformers import (
-    ALBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
-    BERT_PRETRAINED_MODEL_ARCHIVE_LIST,
-    CAMEMBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
-    DISTILBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
-    GPT2_PRETRAINED_MODEL_ARCHIVE_LIST,
-    ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST,
+    # ALBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
+    # BERT_PRETRAINED_MODEL_ARCHIVE_LIST,
+    # CAMEMBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
+    # DISTILBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
+    # GPT2_PRETRAINED_MODEL_ARCHIVE_LIST,
+    # ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST,
     AlbertConfig,
     AutoModel,
     BertConfig,
@@ -47,37 +47,37 @@ HUGGINGFACE_MODELS = {
         "default": "bert-base-uncased",
         "class": BertEncoder,
         "config": BertConfig,
-        "pretrained_model_list": BERT_PRETRAINED_MODEL_ARCHIVE_LIST,
+        # "pretrained_model_list": BERT_PRETRAINED_MODEL_ARCHIVE_LIST,
     },
     "DistilBertModel": {
         "default": "distilbert-base-uncased",
         "class": DistilBertEncoder,
         "config": DistilBertConfig,
-        "pretrained_model_list": DISTILBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
+        # "pretrained_model_list": DISTILBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
     },
     "CamembertModel": {
         "default": "camembert-base-uncased",
         "class": CamembertEncoder,
         "config": CamembertConfig,
-        "pretrained_model_list": CAMEMBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
+        # "pretrained_model_list": CAMEMBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
     },
     "RobertaModel": {
         "default": "roberta-base",
         "class": RobertaEncoder,
         "config": RobertaConfig,
-        "pretrained_model_list": ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST,
+        # "pretrained_model_list": ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST,
     },
     "AlbertModel": {
         "default": "albert-base-v2",
         "class": AlbertEncoder,
         "config": AlbertConfig,
-        "pretrained_model_list": ALBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
+        # "pretrained_model_list": ALBERT_PRETRAINED_MODEL_ARCHIVE_LIST,
     },
     "GPT2Model": {
         "default": "gpt2",
         "class": GPT2Encoder,
         "config": GPT2Config,
-        "pretrained_model_list": GPT2_PRETRAINED_MODEL_ARCHIVE_LIST,
+        # "pretrained_model_list": GPT2_PRETRAINED_MODEL_ARCHIVE_LIST,
     },
 }
 
