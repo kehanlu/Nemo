@@ -8,3 +8,5 @@ git clone https://github.com/huggingface/peft
 cd peft
 pip install -e .
 cd ..
+
+pip install lhotse whisper_normalizer

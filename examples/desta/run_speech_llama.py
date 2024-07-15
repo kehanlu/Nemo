@@ -33,14 +33,10 @@ def main(cfg):
     logging.info(f"\n\nConfig: {OmegaConf.to_yaml(cfg)}\n\n")
     model = SpeechLLaMA(cfg, trainer)
 
+    OmegaConf.save(model.cfg, f"{log_dir}/config.yaml")
+
     trainer.fit(model)
 
-    # ckpt = "/home/khlu/lab/Nemo/workspace/nemo_experiments/MISTA/240709-0044@debug@debug/2024-07-09_00-44-25/checkpoints/MISTA/240709-0044@debug@debug--val_loss=9.612-step=28-epoch=3.ckpt"
-    
-    # model = SpeechLLaMA.load_from_checkpoint(ckpt, strict=False)
-    # logging.info(f"\n\nConfig: {OmegaConf.to_yaml(model.cfg)}\n\n")
-    # trainer = pl.Trainer(**model.cfg.trainer)
-    # trainer.validate(model)
     
 
 
