@@ -37,14 +37,19 @@ class SpeechLLaMA(ModelPT, Exportable):
     def __init__(self, cfg, trainer=None):
         self.cfg = cfg
         super().__init__(cfg=cfg, trainer=trainer)
-
+        
+        # ========================
         # add HF model config for language model and speech encoder
+        # ========================
         self.cfg.model.language_model.cfg = AutoConfig.from_pretrained(cfg.model.language_model.model_id).to_dict()
         self.cfg.model.speech_encoder.cfg = AutoConfig.from_pretrained(cfg.model.speech_encoder.model_id).to_dict()
 
 
-        self.language_model = AutoModelForCausalLM.from_pretrained(self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16)
-        self.language_model.model.layers = self.language_model.model.layers[:8]
+        self.language_model = AutoModelForCausalLM.from_pretrained(
+            self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16,
+            cache_dir="/NeMo/.cache"
+        )
+        # self.language_model.model.layers = self.language_model.model.layers[:8]
         
         self.tokenizer = AutoTokenizer.from_pretrained(self.cfg.model.language_model.model_id)
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
@@ -52,16 +57,6 @@ class SpeechLLaMA(ModelPT, Exportable):
         
         # Encoder
         self.perception = WhisperPerceptionModule(cfg=self.cfg)
-
-
-        # load from checkpoint
-        if self.cfg.model.restore_from_path:
-            logging.info(f"Restoring from checkpoint: {self.cfg.model.restore_from_path}")
-            logging.info(
-                self.load_state_dict(torch.load(self.cfg.model.restore_from_path)
-                ,strict=False)
-            )
-        
 
         self.configure_optimizers()
             # - setup_optimizer()
@@ -73,6 +68,7 @@ class SpeechLLaMA(ModelPT, Exportable):
         # helper for averaging loss
         self.training_step_outputs = []
         self.validation_step_outputs = []
+        self.test_step_outputs = []
     
     def forward(self, batch):
         
@@ -154,6 +150,7 @@ class SpeechLLaMA(ModelPT, Exportable):
 
         self.training_step_outputs.append({'train_loss': loss, 'train_ppl': perplexity})
         
+        # for monitoring
         if batch_idx % self.cfg.model.debug.train_log_every_n_steps == 0:
             self.predict_step(batch, batch_idx)
 
@@ -187,6 +184,7 @@ class SpeechLLaMA(ModelPT, Exportable):
                                audio_positions=batch["audio_positions"]
         )
 
+        # this is original LLM, without audio inputs.
         # inputs_embeds = self.language_model.model.embed_tokens(batch["context_input_ids"])
         # attention_mask = batch["context_attention_mask"]
 
@@ -200,46 +198,38 @@ class SpeechLLaMA(ModelPT, Exportable):
             top_p=self.cfg.model.generation_config.top_p,
         )
 
-        responses = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        predictions = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
 
-        if batch_idx:
-            with open(f"{self.cfg.save_dir}/predictions.jsonl", "a") as fo:
-                fo.write(json.dumps({
-                    "context": batch["context"][0],
-                    "response": responses[0].replace("<|eot_id|>", ""),
-                    "answer": batch["answer"][0].replace("<|eot_id|>", ""),
-                    "epoch": self.trainer.current_epoch,
-                })+ "\n")
 
 
-        preds = []
-        for context, response, answer, metadata in zip(batch["context"], responses, batch["answer"], batch["metadata"]):
-            metadata.update({
+        results = []
+        for context, pred, target, metadata in zip(batch["contexts"], predictions, batch["targets"], batch["metadata"]):
+            result = {
                 "context": context,
-                "response": response,
-                "answer": answer,
-            })
-            preds.append(metadata)
+                "prediction": pred,
+                "target": self.tokenizer.decode(
+                    self.tokenizer.encode(target, add_special_tokens=False), skip_special_tokens=True
+                ) # remove special tokens
+            }
+            result.update(metadata)
+            results.append(result)
+
+
+        # ========================
+        # Write predictions to file
+        # ========================
+        with open(f"{self.cfg.save_dir}/predictions.jsonl", "a") as fo:
+
+            fo.write(json.dumps(result)+ "\n")
         
-        return preds
+        return results
         
     def on_train_epoch_end(self):
-        avg_loss = torch.stack([x["train_loss"] for x in self.training_step_outputs]).mean()
-        avg_perplexity = torch.stack([x["train_ppl"] for x in self.training_step_outputs]).mean()
-        # self.log('avg_train_loss', avg_loss, sync_dist=True, batch_size=1)
-        # self.log('avg_train_perplexity', avg_perplexity, sync_dist=True, batch_size=1)
+        logging.info("********************** Training epoch end **********************")
         self.training_step_outputs.clear()
     
     def on_validation_epoch_end(self):
-        avg_loss = torch.stack([x["val_loss"] for x in self.validation_step_outputs]).mean()
-        avg_perplexity = torch.stack([x["val_ppl"] for x in self.validation_step_outputs]).mean()
-        # self.log('avg_val_loss', avg_loss, sync_dist=True, batch_size=1)
-        # self.log('avg_val_perplexity', avg_perplexity, sync_dist=True, batch_size=1)
-
-        
-        
-        self._save_checkpoint(filename=f"ckpt-@val_loss{avg_loss:.3f}@val_ppl{avg_perplexity:.3f}@step{self.trainer.global_step}-{self.trainer.current_epoch}.pt")
 
         # write predictions
         dataset_name = "val"
@@ -249,13 +239,8 @@ class SpeechLLaMA(ModelPT, Exportable):
                 for pred in item["preds"]:
                     fo.write(json.dumps(pred) + "\n")
                 
-
         self.validation_step_outputs.clear()
 
-    def _save_checkpoint(self, filename):
-        os.makedirs(f"{self.cfg.save_dir}/checkpoints", exist_ok=True)
-        torch.save(self.state_dict(), f"{self.cfg.save_dir}/checkpoints/{filename}")
-        
 
     def _setup_dataloader_from_config(self):
         pass
@@ -274,10 +259,7 @@ class SpeechLLaMA(ModelPT, Exportable):
     def train_dataloader(self):     
         data_cfg = self.cfg.dataset.train_ds
         logging.info("\n********************* Training dataset *********************\n")
-        dataset = SpeechLlamaDataset(cfg=self.cfg, data_cfg=data_cfg)
-        logging.info(dataset[0])
-        dataloader = DataLoader(dataset, batch_size=data_cfg.batch_size, collate_fn=dataset.collate_fn, 
-        shuffle=data_cfg.shuffle)
+        dataloader = self._build_dataloader(data_cfg)
         logging.info("\n***************** End of Training dataset *****************\n")
         
         
@@ -287,17 +269,28 @@ class SpeechLLaMA(ModelPT, Exportable):
     def val_dataloader(self):
         data_cfg = self.cfg.dataset.validation_ds
         logging.info("\n******************** Validation dataset ********************\n")
-        dataset = SpeechLlamaDataset(cfg=self.cfg, data_cfg=data_cfg)
-        logging.info(dataset[0])
-        dataloader = DataLoader(dataset, batch_size=data_cfg.batch_size, collate_fn=dataset.collate_fn, shuffle=data_cfg.shuffle)
+        dataloader = self._build_dataloader(data_cfg)
         logging.info("\n**************** End of Validation dataset ****************\n")
-        
         
         self._validation_dl = dataloader # for ModelPT
         return dataloader
     
+    def _build_dataloader(self, data_cfg):
+        """
+        helper function
+        """
+        dataset = SpeechLlamaDataset(cfg=self.cfg, data_cfg=data_cfg)
+        logging.info(dataset[0])
+        dataloader = DataLoader(
+            dataset,
+            batch_size=data_cfg.batch_size,
+            collate_fn=dataset.collate_fn, 
+            shuffle=data_cfg.shuffle,
+            pin_memory=data_cfg.pin_memory,
+        )
+        return dataloader
     
-    # ==== kehan ====
+    # ==== Nemo ModelPT ====
     def configure_optimizers(self):
         # overwrite ModelPT.configure_optimizers
         self.setup_optimization(self.cfg.model.optim)

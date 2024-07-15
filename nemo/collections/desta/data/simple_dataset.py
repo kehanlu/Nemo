@@ -13,7 +13,6 @@ from nemo.collections.asr.parts.preprocessing.segment import AudioSegment
 
 from transformers import AutoTokenizer, WhisperProcessor, AutoProcessor
 import datasets
-from khlu_utils import print_c
 
 class SpeechLlamaDataset():
     def __init__(self, cfg, data_cfg):
@@ -43,7 +42,7 @@ class SpeechLlamaDataset():
         self.dataset = self.dataset.map(
             self.batchified_preprocess_function,
             batched=True,
-            batch_size=256,
+            batch_size=64,
         )
 
     def preprocess_function(self, example):
@@ -58,7 +57,7 @@ class SpeechLlamaDataset():
         example["audio_position"] = len(self.tokenizer.tokenize(left_text))
 
         example["context"] = left_text + right_text
-        example["answer"] = example["answer"] + self.tokenizer.eos_token
+        example["target"] = example["target"] + self.tokenizer.eos_token
         return example
     
     def batchified_preprocess_function(self, examples):
@@ -92,12 +91,12 @@ class SpeechLlamaDataset():
         # Update examples with new data
         examples["audio_position"] = audio_positions
         examples["context"] = [left + right for left, right in zip(left_texts, right_texts)]
-        examples["answer"] = [answer + self.tokenizer.eos_token for answer in examples["answer"]]
+        examples["target"] = [target + self.tokenizer.eos_token for target in examples["target"]]
 
         return examples
     
     def collate_fn(self, batch):
-        text_inputs = self.tokenizer([item['context']+item["answer"] for item in batch], truncation=True, padding="longest", max_length=200, return_tensors="pt", return_length=True, add_special_tokens=False)
+        text_inputs = self.tokenizer([item['context']+item["target"] for item in batch], truncation=True, padding="longest", max_length=200, return_tensors="pt", return_length=True, add_special_tokens=False)
         context_inputs = self.tokenizer(
             [item['context'] for item in batch], truncation=True, padding="longest", max_length=200, return_tensors="pt", return_length=True, add_special_tokens=False
         )
@@ -128,6 +127,8 @@ class SpeechLlamaDataset():
 
         features = self.processor(features, sampling_rate=16000, return_tensors="pt").input_features
         
+        # we use labels for calculating loss
+        # "target" is the dataset key name
         return {
             'input_ids': text_inputs['input_ids'],
             'attention_mask': text_inputs['attention_mask'],
@@ -139,8 +140,8 @@ class SpeechLlamaDataset():
             'context_attention_mask': context_inputs['attention_mask'],
 
             # for debugging
-            'context': [item['context'] for item in batch],
-            'answer': [item['answer'] for item in batch],
+            'contexts': [item['context'] for item in batch],
+            'targets': [item['target'] for item in batch],
             
             "metadata": [item for item in batch],
         }

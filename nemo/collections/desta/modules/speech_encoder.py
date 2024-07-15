@@ -63,7 +63,7 @@ class WhisperPerceptionModule(NeuralModule, Exportable):
         super().__init__()
         self.cfg = cfg
 
-        whisper = WhisperForConditionalGeneration.from_pretrained(self.cfg.model.speech_encoder.model_id)
+        whisper = WhisperForConditionalGeneration.from_pretrained(self.cfg.model.speech_encoder.model_id, cache_dir="/NeMo/.cache")
         self.encoder = whisper.model.encoder
 
         if self.cfg.model.connector.mode == "qformer_1":
