@@ -21,6 +21,14 @@ from transformers import AutoConfig
 
 import torch.nn as nn
 
+from collections import defaultdict
+from whisper_normalizer.basic import BasicTextNormalizer
+from nemo.utils.khlu import check_finename, check_consecutive_words
+from omegaconf import DictConfig, OmegaConf, open_dict
+
+from peft import LoraConfig, TaskType, get_peft_model
+from collections import OrderedDict
+
 class RandomDataset(Dataset):
     def __init__(self, size, length):
         self.size = size
@@ -45,30 +53,67 @@ class SpeechLLaMA(ModelPT, Exportable):
         self.cfg.model.speech_encoder.cfg = AutoConfig.from_pretrained(cfg.model.speech_encoder.model_id).to_dict()
 
 
+        # ========================
+        # Initialize langauge model
+        # - Causal LM
+        # - Lora
+        # ========================
         self.language_model = AutoModelForCausalLM.from_pretrained(
             self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16,
             cache_dir="/NeMo/.cache"
         )
-        # self.language_model.model.layers = self.language_model.model.layers[:8]
+        
+        
+        if hasattr(self.cfg.model, "lora") and self.cfg.model.lora is not None:
+            lora_config = LoraConfig(
+                r=self.cfg.model.lora.rank,
+                target_modules=["q_proj", 'k_proj', "v_proj"],
+                task_type=TaskType.CAUSAL_LM,
+                lora_alpha=32,
+                lora_dropout=0.05
+            )
+            self.language_model = get_peft_model(
+                self.language_model,
+                lora_config
+            ).base_model.model
         
         self.tokenizer = AutoTokenizer.from_pretrained(self.cfg.model.language_model.model_id)
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
         self.tokenizer.padding_side = "left"
         
-        # Encoder
+        # ========================
+        # Initialize speech perception module
+        # - Encoder + Modality connector
+        # ========================
         self.perception = WhisperPerceptionModule(cfg=self.cfg)
 
+
+        # ========================
+        # Load pre-trained weights if "restore_from_path" is provided
+        # ========================
+        if self.cfg.model.restore_from_path is not None:
+            self._load_pretrained_weights()
+
+
+        # ========================
+        # Setup optimizer
+        # configure_optimizers() calls:
+        # - setup_optimizer()
+        # - setup_optimizer_param_groups()
+        # ========================
         self.configure_optimizers()
-            # - setup_optimizer()
-            # - setup_optimizer_param_groups()
-        logging.info(f"********************** Model summary **********************\n{self.summarize(max_depth=3)}")
-        
+        logging.info(f"********************** Model summary **********************\n")
+        logging.info(f"\n{self.language_model}")
+        logging.info(f"\n{self.summarize(max_depth=4)}")
 
 
-        # helper for averaging loss
+        # ========================
+        # Helpers
+        # store intermediate outputs from training, validation, and prediction steps
+        # ========================
         self.training_step_outputs = []
         self.validation_step_outputs = []
-        self.test_step_outputs = []
+        self.prediction_step_outputs = []
     
     def forward(self, batch):
         
@@ -201,8 +246,6 @@ class SpeechLLaMA(ModelPT, Exportable):
         predictions = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
 
-
-
         results = []
         for context, pred, target, metadata in zip(batch["contexts"], predictions, batch["targets"], batch["metadata"]):
             result = {
@@ -217,10 +260,9 @@ class SpeechLLaMA(ModelPT, Exportable):
 
 
         # ========================
-        # Write predictions to file
+        # Write intermediate predictions to file for debugging
         # ========================
         with open(f"{self.cfg.save_dir}/predictions.jsonl", "a") as fo:
-
             fo.write(json.dumps(result)+ "\n")
         
         return results
@@ -234,11 +276,12 @@ class SpeechLLaMA(ModelPT, Exportable):
         # write predictions
         dataset_name = "val"
         os.makedirs(f"{self.cfg.save_dir}/results/{dataset_name}", exist_ok=True)
-        with open(f"{self.cfg.save_dir}/results/{dataset_name}/val@{self.trainer.global_step}-{self.trainer.current_epoch}.jsonl", "a") as fo:
-            for item in self.validation_step_outputs:
-                for pred in item["preds"]:
-                    fo.write(json.dumps(pred) + "\n")
-                
+        output_path = f"{self.cfg.save_dir}/results/{dataset_name}/val@{self.trainer.global_step}-{self.trainer.current_epoch}.jsonl"
+
+        results = [batch["preds"] for batch in self.validation_step_outputs]
+        outputs = self._calculate_performace(results=results, data_cfg=self.cfg.dataset.validation_ds, ckpt=f"ep={self.trainer.current_epoch}-{self.trainer.global_step}")
+        self._write_outputs_to_file(outputs, output_path)
+
         self.validation_step_outputs.clear()
 
 
@@ -325,6 +368,11 @@ class SpeechLLaMA(ModelPT, Exportable):
                 opt_params.append(p)
                 logging.info(f"\nTrainable: {n} {p.size()}")
 
+        for n, p in self.named_parameters():
+            if "lora_" in n:
+                p.requires_grad = True
+                opt_params.append(p)
+                logging.info(f"\nTrainable: {n} {p.size()}")
 
         self._optimizer_param_groups = [
             {"params": opt_params}
@@ -336,11 +384,116 @@ class SpeechLLaMA(ModelPT, Exportable):
         state_dict = self.perception.connector.state_dict(
             prefix="perception.connector."
         )
+        
+        params = []
+        for n, p in self.named_parameters():
+            if "lora_" in n:
+                params.append((n, p))
+        state_dict.update(params)
         return state_dict
     
+    def _load_pretrained_weights(self):
+        """
+        Load pretrained weights from the cfg.
+        Ignore the missing keys.
+        """
+        logging.info(f"********************** Load pre-trained weights **********************\nFrom{self.cfg.model.restore_from_path}\n")
+        logging.info(self.load_state_dict(
+            torch.load(self.cfg.model.restore_from_path["state_dict"]),
+            strict=False
+        ))
+        logging.info(f"********************** End of load pre-trained weights **********************\n")
+
 
     def _dict_of_lists_to_list_of_dicts(self, d): 
         """
         Convert a dictionary of lists to a list of dictionaries
         """
         return [{k: v[i] for k, v in d.items()} for i in range(len(next(iter(d.values()))))]
+
+    
+    def _calculate_performace(self, results, data_cfg, ckpt=None):
+        """
+        Calculate performance based on the question types and metrics.
+        
+        Parameters:
+        -----------
+        results: List of List of Dict
+            - dict:
+                - question_type
+                - metric
+                - prediction
+                - target
+
+        Returns:
+        --------
+        ouputs: Dict
+            Contains info and prediction results. Ready to dump into a json file.
+        """
+        
+
+        normalizer = BasicTextNormalizer()
+        question_groups = defaultdict(lambda: {"correct": 0, "total": 0})
+        outputs = []
+        for i, batch in enumerate(results):
+            # batch: [{}, {}]
+            for result in batch:
+                question_type = result["question_type"]
+                metric = result["metric"]
+
+                prediction = normalizer(result["prediction"].replace("<|eot_id|>", ""))
+                target = normalizer(result["target"].replace("<|eot_id|>", ""))
+
+                if metric == "accuracy":
+                    if check_consecutive_words(text=prediction, words=target):
+                        question_groups[question_type]["correct"] += 1
+                        result["correct"] = True
+                    else:
+                        result["correct"] = False
+                question_groups[question_type]["total"] += 1
+                result["index"] = len(outputs)
+                outputs.append(result)
+        accuracies = {}
+        for question_type, counts in question_groups.items():
+            accuracy = counts['correct'] / counts['total'] if counts['total'] > 0 else 0
+            accuracies[question_type] = accuracy
+
+        easy_copy_format = ",".join(
+            [f"{v:.4f}" for k, v in accuracies.items()]
+        )
+        return {
+            "info": {
+                "accuracy": accuracies,
+                "total_data": len(outputs),
+                "dataset": OmegaConf.to_container(data_cfg, resolve=True),
+                "ckpt": str(ckpt),
+                "easy_copy_format": easy_copy_format
+            },
+            "results": outputs,
+            "config": OmegaConf.to_container(self.cfg, resolve=True),
+        }
+    
+
+    def _write_outputs_to_file(self, outputs: dict, output_path: str):
+        """
+        Parameters:
+        -----------
+        outputs: Dict
+        output_path: str
+            Path to the output file. Make sure the parent directory exists.
+
+        Returns:
+        --------
+        result: {
+            info: {}
+            results: [{}] # list of predictions
+        }
+        """
+
+        output_path = check_finename(output_path)
+        
+        with open(output_path, "w") as fo:
+            json.dump(outputs, fo, indent=2, ensure_ascii=False)
+        
+        logging.info(f"write predictions to:\n\n{output_path}\n")
+        logging.info("********************** End of write file **********************")

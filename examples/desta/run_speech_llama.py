@@ -25,7 +25,7 @@ def main(cfg):
     pl.seed_everything(42)
 
     trainer = pl.Trainer(callbacks=[
-        RichModelSummary(max_depth=3),
+        RichModelSummary(max_depth=4),
     ],**cfg.trainer)
 
     log_dir = exp_manager(trainer, cfg.get("exp_manager", None))
