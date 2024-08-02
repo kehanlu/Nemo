@@ -16,17 +16,27 @@ from pytorch_lightning.strategies.ddp import DDPStrategy
 
 from pytorch_lightning.utilities import rank_zero_info
 from pytorch_lightning.callbacks import RichModelSummary
+from typing import Any, Callable, Dict, Generator, List, Mapping, Optional, Tuple, TypeVar, Union, cast
 
-SLURMEnvironment.detect = lambda: False
+# overwrite detector for interactive SLURM in our cluster
+# SLURMEnvironment.detect = lambda: False
+
+# overwrite pl strategy to load model state dict with strict=False
+def load_model_state_dict(self, checkpoint: Mapping[str, Any]) -> None:
+    assert self.lightning_module is not None
+    self.lightning_module.load_state_dict(checkpoint["state_dict"], strict=False)
+
+pl.strategies.Strategy.load_model_state_dict = load_model_state_dict
 
 
 @hydra_runner(config_path="conf", config_name="whisper_llama")
 def main(cfg):
     pl.seed_everything(42)
 
-    trainer = pl.Trainer(callbacks=[
-        RichModelSummary(max_depth=4),
-    ],**cfg.trainer)
+    trainer = pl.Trainer(
+        callbacks=[RichModelSummary(max_depth=4)],
+        **cfg.trainer
+    )
 
     log_dir = exp_manager(trainer, cfg.get("exp_manager", None))
 
@@ -38,7 +48,5 @@ def main(cfg):
     trainer.fit(model)
 
     
-
-
 if __name__ == '__main__':
     main()
