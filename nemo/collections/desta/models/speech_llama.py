@@ -359,18 +359,21 @@ class SpeechLLaMA(ModelPT, Exportable):
             known_groups.append('perception.encoder.')
 
         opt_params = []
+        opt_params_name = []
         for n, p in self.named_parameters():
             is_unknown = True
             for group in known_groups:
                 if n.startswith(group):
                     is_unknown = False
             if is_unknown:
+                opt_params_name.append(n)
                 opt_params.append(p)
                 logging.info(f"\nTrainable: {n} {p.size()}")
 
         for n, p in self.named_parameters():
             if "lora_" in n:
                 p.requires_grad = True
+                opt_params_name.append(n)
                 opt_params.append(p)
                 logging.info(f"\nTrainable: {n} {p.size()}")
 
@@ -378,18 +381,28 @@ class SpeechLLaMA(ModelPT, Exportable):
             {"params": opt_params}
         ]
 
+        self._optimizer_param_groups_name = opt_params_name # @khlu: for saving trainable state_dict only
+
 
     def state_dict(self):
+        # overwrite torch.nn.Module.state_dict
         # only save updated parameters
-        state_dict = self.perception.connector.state_dict(
-            prefix="perception.connector."
-        )
-        
-        params = []
+
+        state_dict = []
         for n, p in self.named_parameters():
-            if "lora_" in n:
-                params.append((n, p))
-        state_dict.update(params)
+            if n in self._optimizer_param_groups_name:
+                state_dict.append((n, p))
+
+        state_dict = OrderedDict(state_dict)
+        # state_dict = self.perception.connector.state_dict(
+        #     prefix="perception.connector."
+        # )
+        
+        # params = []
+        # for n, p in self.named_parameters():
+        #     if "lora_" in n:
+        #         params.append((n, p))
+        # state_dict.update(params)
         return state_dict
     
     def _load_pretrained_weights(self):
@@ -399,12 +412,15 @@ class SpeechLLaMA(ModelPT, Exportable):
         """
         logging.info(f"********************** Load pre-trained weights **********************\nFrom{self.cfg.model.restore_from_path}\n")
         logging.info(self.load_state_dict(
-            torch.load(self.cfg.model.restore_from_path["state_dict"]),
+            torch.load(self.cfg.model.restore_from_path)["state_dict"],
             strict=False
         ))
         logging.info(f"********************** End of load pre-trained weights **********************\n")
 
 
+    # ========================
+    # Related to performance calculation and writing outputs to file
+    # ========================
     def _dict_of_lists_to_list_of_dicts(self, d): 
         """
         Convert a dictionary of lists to a list of dictionaries

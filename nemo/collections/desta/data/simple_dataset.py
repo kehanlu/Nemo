@@ -22,7 +22,7 @@ class SpeechLlamaDataset():
         self.tokenizer = AutoTokenizer.from_pretrained(self.cfg.model.language_model.model_id)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"
-        self.processor = AutoProcessor.from_pretrained("openai/whisper-tiny")
+        self.processor = AutoProcessor.from_pretrained("openai/whisper-small")
 
         
         logging.info(self.data_cfg)
@@ -122,7 +122,9 @@ class SpeechLlamaDataset():
                 item["audio_filepath"],
                 target_sr=16000,
                 duration=item["duration"],
+                channel_selector="average" # average two channels
             ).samples
+
             features.append(feature)
 
         features = self.processor(features, sampling_rate=16000, return_tensors="pt").input_features
@@ -151,3 +153,4 @@ class SpeechLlamaDataset():
     
     def __getitem__(self, idx):
         return self.dataset[idx]
+    
