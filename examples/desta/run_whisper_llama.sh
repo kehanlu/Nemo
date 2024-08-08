@@ -10,13 +10,13 @@ export HF_DATASETS_CACHE="/NeMo/.cache"
 
 EXP_DIR=$NEMO_DIR/workspace/nemo_experiments
 dataset_config="pretrain.yaml"
-DATA_ROOT="/NeMo/data/audios"
-train_manifest_filepaths="/NeMo/data/train.jsonl"
-val_manifest_filepaths="/NeMo/data/val.jsonl"
+DATA_ROOT="/NeMo/data/audios/project_kira"
+train_manifest_filepaths="/NeMo/data/project_kira/whatyouhear/0808_train.jsonl"
+val_manifest_filepaths="/NeMo/data/project_kira/whatyouhear/0808_val.jsonl"
 
 
-# WANDB_API_KEY='YOUR_KEY'
-# wandb login $WANDB_API_KEY
+WANDB_API_KEY='YOUR_KEY'
+wandb login $WANDB_API_KEY
 
 
 # Exp
@@ -50,7 +50,7 @@ max_new_tokens=128
 do_sample=False
 
 # exp_manager
-create_wandb_logger=false
+create_wandb_logger=true
 
 wandb_project_name=${project_name}
 wandb_exp_name=${dataset_config}
@@ -86,8 +86,8 @@ CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python "$NEMO_DIR/examples/desta/run_
     ++model.generation_config.do_sample=$do_sample \\
     ++dataset.train_ds.data_root=$DATA_ROOT \\
     ++dataset.train_ds.manifest_filepaths=$train_manifest_filepaths \\
-    ++dataset.val_ds.data_root=$DATA_ROOT \\
-    ++dataset.val_ds.manifest_filepaths=$val_manifest_filepaths \\
+    ++dataset.validation_ds.data_root=$DATA_ROOT \\
+    ++dataset.validation_ds.manifest_filepaths=$val_manifest_filepaths \\
     ++model.language_model.model_id=$llm_id \\
     ++model.speech_encoder.model_id=$speech_encoder_id
 EOF
