@@ -4,14 +4,16 @@ drop_last: false
 audio_locator: "|audio_features|"
 
 train_ds:
-  manifest_filepaths: "/home/khlu/lab/project_kira/training_set/train_manifest/0707_summarize.train.jsonl"
-  data_root: "/home/khlu/nas/Datasets/DeSTA/PromptTTS"
+  manifest_filepaths: ???
+  data_root: ???
   replace_keys: 
-    - question
+    - input
     - transcription
   chat_template:
+    - role: audio
+      content: "|audio_features|{transcription}"
     - role: user
-      content: "|audio_features|{transcription}\n\n{question}"
+      content: "{input}"
 
 
   max_duration: 30
@@ -25,10 +27,8 @@ train_ds:
   pin_memory: ${dataset.pin_memory}
 
 validation_ds:
-  manifest_filepaths: "/home/khlu/lab/project_kira/evaluation_set/eval_manifest/0707_core_combined.jsonl" # .json file
-  data_root: "/livingrooms/khlu/Datasets/PromptTTS_dataset/test/target_16k"
-  # manifest_filepaths: "/home/khlu/nas/Datasets/DeSTA/debug2.jsonl"
-  # data_root: "/home/khlu/nas/Datasets/DeSTA"
+  manifest_filepaths: ???
+  data_root: ???
 
   replace_keys: ${dataset.train_ds.replace_keys}
   chat_template: ${dataset.train_ds.chat_template}

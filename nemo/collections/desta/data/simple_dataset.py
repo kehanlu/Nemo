@@ -13,6 +13,7 @@ from nemo.collections.asr.parts.preprocessing.segment import AudioSegment
 
 from transformers import AutoTokenizer, WhisperProcessor, AutoProcessor
 import datasets
+import os
 
 class SpeechLlamaDataset():
     def __init__(self, cfg, data_cfg):
@@ -63,6 +64,10 @@ class SpeechLlamaDataset():
     def batchified_preprocess_function(self, examples):
         # Add data root to audio filepaths
         examples["audio_filepath"] = [str(self.data_cfg.data_root) + "/" + filepath for filepath in examples["audio_filepath"]]
+
+        # check file exists
+        for filepath in examples["audio_filepath"]:
+            assert os.path.exists(filepath), f"File not found: {filepath}"
 
         # Apply chat template to create contexts
         context = self.tokenizer.apply_chat_template(
