@@ -23,7 +23,7 @@ class SpeechLlamaDataset():
         self.tokenizer = AutoTokenizer.from_pretrained(self.cfg.model.language_model.model_id)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "left"
-        self.processor = AutoProcessor.from_pretrained("openai/whisper-small")
+        self.processor = AutoProcessor.from_pretrained(self.cfg.model.speech_encoder.model_id)
 
         
         logging.info(self.data_cfg)
