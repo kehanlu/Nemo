@@ -10,9 +10,9 @@ export HF_DATASETS_CACHE="/NeMo/.cache"
 
 EXP_DIR=$NEMO_DIR/workspace/nemo_experiments
 dataset_config="pretrain.yaml"
-DATA_ROOT="/NeMo/data/audios/project_kira"
-train_manifest_filepaths="/NeMo/data/project_kira/whatyouhear/0808_train.jsonl"
-val_manifest_filepaths="/NeMo/data/project_kira/whatyouhear/0808_val.jsonl"
+DATA_ROOT="/NeMo/data/"
+train_manifest_filepaths="/NeMo/data/train.jsonl"
+val_manifest_filepaths="/NeMo/data/val.jsonl"
 
 
 WANDB_API_KEY='YOUR_KEY'
@@ -20,14 +20,15 @@ wandb login $WANDB_API_KEY
 
 
 # Exp
+project_name=""
+
+
 CUDA_VISIBLE_DEVICES=0
 devices=1
 config_name="whisper_llama"
-project_name="icassp"
-
-
 llm_id="meta-llama/Meta-Llama-3-8B-Instruct"
 speech_encoder_id="openai/whisper-large-v3"
+
 
 
 restore_from_path=null
