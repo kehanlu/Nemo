@@ -101,6 +101,7 @@ class SpeechLLaMA(ModelPT, Exportable):
         # - setup_optimizer()
         # - setup_optimizer_param_groups()
         # ========================
+        
         self.configure_optimizers()
         logging.info(f"********************** Model summary **********************\n")
         logging.info(f"\n{self.language_model}")
@@ -115,15 +116,28 @@ class SpeechLLaMA(ModelPT, Exportable):
         self.validation_step_outputs = []
         self.prediction_step_outputs = []
     
+
+
     def forward(self, batch):
         
-        inputs_embeds, attention_mask, labels = self.prepare_llm_input(input_ids=batch["input_ids"], 
-                               attention_mask=batch["attention_mask"],
-                               labels=batch["labels"],
-                               audio_features=batch["audio_features"],
-                               audio_positions=batch["audio_positions"]
-        )
-        
+        if len(batch["audio_features"].size()) == 3:
+            # (bs, 80, 3000)
+            inputs_embeds, attention_mask, labels = self.prepare_llm_input(input_ids=batch["input_ids"], 
+                                attention_mask=batch["attention_mask"],
+                                labels=batch["labels"],
+                                audio_features=batch["audio_features"],
+                                audio_positions=batch["audio_positions"]
+            )
+        elif len(batch["audio_features"].size()) == 4:
+            # (bs, num_audio, 80, 3000)
+            inputs_embeds, attention_mask, labels = self.prepare_llm_input_multiaudio(input_ids=batch["input_ids"], 
+                                attention_mask=batch["attention_mask"],
+                                labels=batch["labels"],
+                                audio_features=batch["audio_features"],
+                                audio_positions=batch["audio_positions"]
+            )
+        else:
+            raise NotImplementedError("Audio features must be 3D or 4D tensor")
 
         outputs = self.language_model(
             inputs_embeds=inputs_embeds,
@@ -175,7 +189,62 @@ class SpeechLLaMA(ModelPT, Exportable):
         new_labels = torch.stack(new_labels)
         return new_inputs_embeds, new_attention_mask, new_labels
         
-    
+    def prepare_llm_input_multiaudio(self, input_ids, attention_mask, labels, audio_features, audio_positions):
+        # put audio features into the input
+        bs = input_ids.size(0)
+        inputs_embeds = self.language_model.model.embed_tokens(input_ids) # [bs, seq_len, hidden_size]
+        
+        # audio_features = (bs, num_audio, 80, 3000)
+        item_audio_features = []
+        item_audio_feature_lengths = []
+        for i in range(bs):
+            item_audio_feature, item_audio_feature_length = self.perception(audio_features[i, :, :, :])
+            # audio_features = (num_audio, feat_lengths, dim)
+            item_audio_features.append(item_audio_feature)
+            item_audio_feature_lengths.append(item_audio_feature_length)
+
+        new_input_ids = []
+        new_inputs_embeds = []
+        new_attention_mask = []
+        new_labels = []
+
+        for i in range(bs):
+            item_input_ids = input_ids[i]
+            item_inputs_embeds = inputs_embeds[i]
+            item_attention_mask = attention_mask[i]
+            item_labels = labels[i]
+
+            audio_features = item_audio_features[i]
+
+            for j in range(len(audio_positions[i])):
+                audio_p = audio_positions[i][j] # in-memory operation because we will increase the position
+                audio_feature_length = item_audio_feature_lengths[i][j]  
+
+                item_input_ids = torch.cat([item_input_ids[:audio_p], torch.ones([audio_feature_length], dtype=torch.long, device=self.device), item_input_ids[audio_p:]], dim=0)
+                item_inputs_embeds = torch.cat([item_inputs_embeds[:audio_p], audio_features[j, :], item_inputs_embeds[audio_p:]], dim=0)
+                item_attention_mask = torch.cat([item_attention_mask[:audio_p], torch.ones([audio_feature_length], dtype=torch.long, device=self.device), item_attention_mask[audio_p:]], dim=0)
+                item_labels = torch.cat([item_labels[:audio_p], torch.full([audio_feature_length], -100, dtype=torch.long, device=self.device), item_labels[audio_p:]], dim=0)
+
+                audio_positions[i] = audio_positions[i] + audio_feature_length
+
+            new_input_ids.append(item_input_ids)
+            new_inputs_embeds.append(item_inputs_embeds)
+            new_attention_mask.append(item_attention_mask)
+            new_labels.append(item_labels)
+
+        # for idx, (inp, att, lab) in enumerate(zip(new_input_ids[i], new_attention_mask[i], new_labels[i])):
+        #     inp, att, lab = inp.item(), att.item(), lab.item()
+
+        #     print(f"({idx})", inp, att, lab, self.tokenizer.decode(inp).strip(), sep="\t")
+            
+        # print(new_input_ids[0])
+
+        new_inputs_embeds = torch.stack(new_inputs_embeds)
+        new_attention_mask = torch.stack(new_attention_mask)
+        new_labels = torch.stack(new_labels)
+        return new_inputs_embeds, new_attention_mask, new_labels
+
+
 
     def training_step(self, batch, batch_idx):
         self.train()
@@ -222,12 +291,26 @@ class SpeechLLaMA(ModelPT, Exportable):
         self.eval()
 
         # "context_input_ids"
-        inputs_embeds, attention_mask, labels = self.prepare_llm_input(input_ids=batch["context_input_ids"], 
+        if len(batch["audio_features"].size()) == 3:
+            inputs_embeds, attention_mask, labels = self.prepare_llm_input(input_ids=batch["context_input_ids"], 
                                attention_mask=batch["context_attention_mask"],
                                labels=batch["labels"],
                                audio_features=batch["audio_features"],
                                audio_positions=batch["audio_positions"]
-        )
+            )
+        elif len(batch["audio_features"].size()) == 4:
+            inputs_embeds, attention_mask, labels = self.prepare_llm_input_multiaudio(input_ids=batch["context_input_ids"], 
+                               attention_mask=batch["context_attention_mask"],
+                               labels=batch["labels"],
+                               audio_features=batch["audio_features"],
+                               audio_positions=batch["audio_positions"]
+            )
+        # inputs_embeds, attention_mask, labels = self.prepare_llm_input(input_ids=batch["context_input_ids"], 
+        #                        attention_mask=batch["context_attention_mask"],
+        #                        labels=batch["labels"],
+        #                        audio_features=batch["audio_features"],
+        #                        audio_positions=batch["audio_positions"]
+        # )
 
         # this is original LLM, without audio inputs.
         # inputs_embeds = self.language_model.model.embed_tokens(batch["context_input_ids"])
@@ -454,8 +537,8 @@ class SpeechLLaMA(ModelPT, Exportable):
         for i, batch in enumerate(results):
             # batch: [{}, {}]
             for result in batch:
-                question_type = result["question_type"]
-                metric = result["metric"]
+                question_type = result.get("question_type", "gen")
+                metric = result.get("metric")
 
                 prediction = normalizer(result["prediction"].replace("<|eot_id|>", ""))
                 target = normalizer(result["target"].replace("<|eot_id|>", ""))
@@ -466,6 +549,9 @@ class SpeechLLaMA(ModelPT, Exportable):
                         result["correct"] = True
                     else:
                         result["correct"] = False
+                else:
+                    result["correct"] = False
+
                 question_groups[question_type]["total"] += 1
                 result["index"] = len(outputs)
                 outputs.append(result)
