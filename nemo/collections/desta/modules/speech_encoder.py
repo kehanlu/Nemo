@@ -34,6 +34,8 @@ class QformerConnector(NeuralModule):
             self.target_layer_ids = [0,1,2,3]
         elif self.cfg.model.speech_encoder.model_id == "openai/whisper-large-v3":
             self.target_layer_ids = [3, 7, 11, 15, 19, 23, 27, 31]
+        else:
+            raise NotImplementedError(f"model_id {self.cfg.model.speech_encoder.model_id} not implemented")
 
 
         self.layer_prompts = nn.ParameterList([

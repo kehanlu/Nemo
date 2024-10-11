@@ -1,0 +1,59 @@
+# from /NeMo/data/project_kira/whatyouhear/0808_train.jsonl
+# fix transcription with tailing \"
+
+num_workers: 0
+pin_memory: false
+drop_last: false
+audio_locator: "|audio_features|"
+
+train_ds:
+  manifest_filepaths: "/NeMo/data/project_kira/whatyouhear/0811_train_MixedConcat.jsonl"
+  data_root: "/NeMo/data/audios/project_kira"
+  replace_keys: 
+    - input
+    - transcription
+  chat_template:
+    - role: audio
+      content: "|audio_features|{transcription}"
+    - role: user
+      content: "{input}"
+
+
+  max_duration: 30
+  min_duration: 0
+  batch_size: 4 # per GPU
+  shuffle: true
+  num_samples: -1
+  
+  num_workers: ${dataset.num_workers}
+  drop_last: ${dataset.drop_last}
+  pin_memory: ${dataset.pin_memory}
+
+validation_ds:
+  manifest_filepaths: "/NeMo/data/dynamic-superb/0720_val.jsonl" # .json file
+  data_root: "/NeMo/data/audios/dynamic-superb-train"
+
+  replace_keys: ${dataset.train_ds.replace_keys}
+  chat_template: ${dataset.train_ds.chat_template}
+  max_duration: ${dataset.train_ds.max_duration}
+  min_duration: ${dataset.train_ds.min_duration}
+
+  batch_size: 8 # per GPU
+  shuffle: false
+  num_samples: -1
+
+  
+  num_workers: ${dataset.num_workers}
+  drop_last: ${dataset.drop_last}
+  pin_memory: ${dataset.pin_memory}
+
+test_ds:
+  file: null # .json file
+  batch_size: 24 # per GPU
+  shuffle: false
+  num_samples: -1
+  
+  # default values for the following params are retrieved from dataset config section, but you may override them
+  num_workers: ${dataset.num_workers}
+  drop_last: ${dataset.drop_last}
+  pin_memory: ${dataset.pin_memory}

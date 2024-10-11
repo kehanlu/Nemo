@@ -1,6 +1,5 @@
 
 import os
-
 import pytorch_lightning as pl
 from omegaconf import DictConfig, OmegaConf
 from nemo.core.config import hydra_runner

@@ -30,6 +30,8 @@ def main(exp_dir:str = typer.Option(..., "--exp_dir"),
     for ckpt in Path(exp_dir).glob("**/*.ckpt"):
         if f"epoch={epoch}" in str(ckpt):
             break
+    else:
+        assert False, f"Checkpoint not found for epoch={epoch} in {exp_dir}"
     logging.info(f"Loading checkpoint: {ckpt}")
 
     # ========================

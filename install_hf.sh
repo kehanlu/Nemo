@@ -10,5 +10,6 @@ pip install -e .
 cd ..
 
 pip install lhotse whisper_normalizer
+# pip install -e /NeMo/khlu_utils
 
 pip install -U huggingface_hub==0.23.5
