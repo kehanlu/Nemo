@@ -7,8 +7,8 @@ export NVTE_FLASH_ATTN=0
 export NVTE_FUSED_ATTN=0
 export HF_DATASETS_CACHE="/NeMo/.cache"
 
-exp_dir="/NeMo/workspace/nemo_experiments/MISTA/240810-17@project_kira+0811_whatyouhear.yaml@10e@"
-config_file="/NeMo/workspace/nemo_experiments/MISTA/240810-17@project_kira+0811_whatyouhear_MixedConcat.yaml@10e@/config_eval_zh.yaml"
+exp_dir="/NeMo/workspace/nemo_experiments/..." # path to the experiment directory
+config_file="/NeMo/workspace/nemo_experiments/..." # path to the config file
 
 epoch=9
 
@@ -18,7 +18,7 @@ epoch=9
 dataset_name="dynamic-superb-test"
 
 if [ "$dataset_name" = "dynamic-superb-test" ]; then
-    manifest_filepaths="/NeMo/data/dynamic-superb/240811_dynamic-superb-test.jsonl"
+    manifest_filepaths="/NeMo/data/dynamic-superb/dynamic-superb-test.jsonl"
     data_root="/NeMo/data/audios/dynamic-superb-test"
 fi
 

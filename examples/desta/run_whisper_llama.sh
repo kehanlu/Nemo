@@ -13,18 +13,14 @@ wandb login $WANDB_API_KEY
 
 
 # Exp
-CUDA_VISIBLE_DEVICES=$1
-# CUDA_VISIBLE_DEVICES=2,3
-# devices=1
 devices=2
 
 config_name="whisper_llama"
+dataset_config=$1
 
 
-project_name="MISTA"
-name=$3
-
-dataset_config=$2
+project_name="desta2"
+name=$2
 
 
 restore_from_path=null
@@ -64,7 +60,7 @@ cat $0 > $save_dir/backup/run.sh
 echo $restore_from_path > $save_dir/from_pretrained
 
 read -r -d '' COMMAND << EOF
-CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python "$NEMO_DIR/examples/desta/run_speech_llama.py" \\
+python "$NEMO_DIR/examples/desta/run_speech_llama.py" \\
     --config-name "$config_name" \\
     save_dir="$save_dir/" \\
     +dataset="$dataset_config" \\
