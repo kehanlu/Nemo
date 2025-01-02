@@ -47,7 +47,7 @@ class QformerConnector(NeuralModule):
             self.layer_weights = nn.Parameter(torch.zeros(self.cfg.model.connector.prompt_size, len(self.target_layer_ids), dtype=torch.float))
 
         qformer_config = BertConfig()
-        qformer_config.num_hidden_layers = 2
+        qformer_config.num_hidden_layers = self.cfg.model.connector.num_hidden_layers if hasattr(self.cfg.model.connector, "num_hidden_layers") else 2
         qformer_config.num_attention_heads = self.cfg.model.speech_encoder.cfg.encoder_attention_heads
         qformer_config.hidden_size = self.cfg.model.speech_encoder.cfg.d_model
         qformer_config.add_cross_attention = True

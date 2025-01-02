@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 
 import torch.nn.functional as F
 
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, MllamaForCausalLM, MllamaConfig
 from transformers import WhisperModel, BertConfig, WhisperForConditionalGeneration
 
 from nemo.utils import logging
@@ -28,6 +28,8 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 
 from peft import LoraConfig, TaskType, get_peft_model
 from collections import OrderedDict
+
+import gc
 
 class RandomDataset(Dataset):
     def __init__(self, size, length):
@@ -49,7 +51,10 @@ class SpeechLLaMA(ModelPT, Exportable):
         # ========================
         # add HF model config for language model and speech encoder
         # ========================
-        self.cfg.model.language_model.cfg = AutoConfig.from_pretrained(cfg.model.language_model.model_id).to_dict()
+        if self.cfg.model.language_model.model_id == "kehanlu/llm32":
+            self.cfg.model.language_model.cfg = MllamaConfig.from_pretrained(cfg.model.language_model.model_id).to_dict()
+        else:
+            self.cfg.model.language_model.cfg = AutoConfig.from_pretrained(cfg.model.language_model.model_id).to_dict()
         self.cfg.model.speech_encoder.cfg = AutoConfig.from_pretrained(cfg.model.speech_encoder.model_id).to_dict()
 
 
@@ -58,10 +63,16 @@ class SpeechLLaMA(ModelPT, Exportable):
         # - Causal LM
         # - Lora
         # ========================
-        self.language_model = AutoModelForCausalLM.from_pretrained(
-            self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16,
-            cache_dir="/NeMo/.cache"
-        )
+        if self.cfg.model.language_model.model_id == "kehanlu/llm32":
+            self.language_model = MllamaForCausalLM.from_pretrained(
+                self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16,
+                cache_dir="/NeMo/.cache"
+            )
+        else:
+            self.language_model = AutoModelForCausalLM.from_pretrained(
+                self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16,
+                cache_dir="/NeMo/.cache"
+            )
         
         
         if hasattr(self.cfg.model, "lora") and self.cfg.model.lora is not None:
@@ -262,12 +273,16 @@ class SpeechLLaMA(ModelPT, Exportable):
             'global_step', self.trainer.global_step, prog_bar=True, rank_zero_only=True, batch_size=batch_size
         )
 
-        self.training_step_outputs.append({'train_loss': loss, 'train_ppl': perplexity})
+        self.training_step_outputs.append({'train_loss': loss.item(), 'train_ppl': perplexity.item()})
         
         # for monitoring
         if batch_idx % self.cfg.model.debug.train_log_every_n_steps == 0:
             self.predict_step(batch, batch_idx)
-
+            gc.collect()
+            torch.cuda.empty_cache()
+        # del outputs
+        # gc.collect()
+        # torch.cuda.empty_cache()
         return loss
     
     def validation_step(self, batch, batch_idx):
@@ -277,13 +292,13 @@ class SpeechLLaMA(ModelPT, Exportable):
         perplexity = torch.exp(loss)
 
         batch_size = batch["input_ids"].size(0)
-        self.log("val_loss", loss, sync_dist=True, batch_size=batch_size)
-        self.log("val_ppl", perplexity, sync_dist=True, batch_size=batch_size)
+        self.log("val_loss", loss.item(), sync_dist=True, batch_size=batch_size)
+        self.log("val_ppl", perplexity.item(), sync_dist=True, batch_size=batch_size)
         
     
         preds = self.predict_step(batch, batch_idx)
 
-        self.validation_step_outputs.append({"val_loss": loss, "val_ppl": perplexity, "preds": preds})
+        self.validation_step_outputs.append({"val_loss": loss.item(), "val_ppl": perplexity.item(), "preds": preds})
         return {"val_loss": loss, "val_ppl": perplexity, "preds": preds}
 
     def predict_step(self, batch, batch_idx):
@@ -348,6 +363,9 @@ class SpeechLLaMA(ModelPT, Exportable):
         with open(f"{self.cfg.save_dir}/predictions.jsonl", "a") as fo:
             fo.write(json.dumps(result)+ "\n")
         
+        del outputs
+        gc.collect()
+        torch.cuda.empty_cache()
         return results
         
     def on_train_epoch_end(self):
@@ -413,6 +431,9 @@ class SpeechLLaMA(ModelPT, Exportable):
             collate_fn=dataset.collate_fn, 
             shuffle=data_cfg.shuffle,
             pin_memory=data_cfg.pin_memory,
+            # num_workers=4,
+            # persistent_workers=True,
+            # prefetch_factor=2
         )
         return dataloader
     

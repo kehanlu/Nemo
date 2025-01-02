@@ -4,16 +4,16 @@ drop_last: false
 audio_locator: "|audio_features|"
 
 train_ds:
-  manifest_filepaths: "/home/khlu/nas/Datasets/DeSTA/debug2.jsonl"
-  data_root: "/home/khlu/nas/Datasets/DeSTA"
+  manifest_filepaths: "/NeMo/data/debug_train.jsonl"
+  data_root: "/NeMo/data/audios/PromptTTS"
   replace_keys: 
-    - question
+    - input
     - transcription
   chat_template:
     - role: audio
       content: "|audio_features|{transcription}"
     - role: user
-      content: "{question}"
+      content: "{input}"
 
   # manifest_filepaths: "/home/khlu/nas/Datasets/DeSTA/debug2.jsonl"
   # data_root: "/home/khlu/nas/Datasets/DeSTA"
@@ -37,8 +37,8 @@ train_ds:
   pin_memory: ${dataset.pin_memory}
 
 validation_ds:
-  manifest_filepaths: "/home/khlu/nas/Datasets/DeSTA/debug2.jsonl"
-  data_root: "/home/khlu/nas/Datasets/DeSTA"
+  manifest_filepaths: "/NeMo/data/debug_test.jsonl"
+  data_root: "/NeMo/data/audios/PromptTTS"
 
   replace_keys: ${dataset.train_ds.replace_keys}
   chat_template: ${dataset.train_ds.chat_template}

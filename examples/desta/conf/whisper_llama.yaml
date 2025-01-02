@@ -55,6 +55,7 @@ model:
   connector:
     mode: qformer_1
     prompt_size: 64
+    num_hidden_layers: 2
 
 
   generation_config:

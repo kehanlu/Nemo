@@ -7,6 +7,7 @@ from nemo.utils import logging
 from nemo.utils.exp_manager import exp_manager
 
 from nemo.collections.desta.models.speech_llama import SpeechLLaMA
+from nemo.collections.desta.models.speech_llama_multiaudio import MultiAudioSpeechLLaMA
 
 from pytorch_lightning.plugins.environments import SLURMEnvironment
 from pytorch_lightning.plugins import environments
@@ -40,6 +41,8 @@ def main(cfg):
     log_dir = exp_manager(trainer, cfg.get("exp_manager", None))
 
     logging.info(f"\n\nConfig: {OmegaConf.to_yaml(cfg)}\n\n")
+    
+    # model = MultiAudioSpeechLLaMA(cfg, trainer)
     model = SpeechLLaMA(cfg, trainer)
 
     OmegaConf.save(model.cfg, f"{log_dir}/config.yaml")

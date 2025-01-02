@@ -1,6 +1,7 @@
 transformers
 peft/
 workspace/
+data/
 
 # log and data files
 *.model
