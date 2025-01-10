@@ -12,4 +12,4 @@ cd ..
 
 pip install lhotse whisper_normalizer
 
-pip install -U huggingface_hub
+pip install -U huggingface_hub==0.23.5

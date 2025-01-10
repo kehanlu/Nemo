@@ -59,6 +59,23 @@ class QformerConnector(NeuralModule):
                 nn.Linear(self.cfg.model.speech_encoder.cfg.d_model, self.cfg.model.language_model.cfg.hidden_size) # project to llama hidden size
             )
 
+class CNNConnector(NeuralModule):
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+
+        # a 3-layer CNN module that compress the audio features from length 1500 to 100
+        self.cnn = nn.Sequential(
+            nn.Conv1d(self.cfg.model.speech_encoder.cfg.d_model, self.cfg.model.speech_encoder.cfg.d_model, kernel_size=5, stride=5, padding=2),
+            nn.ReLU(),
+            nn.Conv1d(self.cfg.model.speech_encoder.cfg.d_model, self.cfg.model.speech_encoder.cfg.d_model, kernel_size=5, stride=3, padding=2),
+            nn.ReLU(),
+            nn.Conv1d(self.cfg.model.speech_encoder.cfg.d_model, self.cfg.model.speech_encoder.cfg.d_model, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+        )
+
+        self.proj = nn.Linear(self.cfg.model.speech_encoder.cfg.d_model, self.cfg.model.language_model.cfg.hidden_size)
+
 
 class WhisperPerceptionModule(NeuralModule, Exportable):
     def __init__(self, cfg):
@@ -70,6 +87,8 @@ class WhisperPerceptionModule(NeuralModule, Exportable):
 
         if self.cfg.model.connector.mode == "qformer_1":
             self.connector = QformerConnector(cfg=self.cfg)
+        elif self.cfg.model.connector.mode == "cnn_1":
+            self.connector = CNNConnector(cfg=self.cfg)
         else:
             raise NotImplementedError(f"mode {self.cfg.model.connector.mode} not implemented")
 
@@ -113,7 +132,7 @@ class WhisperPerceptionModule(NeuralModule, Exportable):
         # hidden_states = nn.functional.dropout(hidden_states, p=self.encoder.dropout, training=self.training)
         features_length = hidden_states.size(1)
 
-        if self.cfg.model.connector.mode == "qformer_1" or self.cfg.model.connector.mode == "qformer_2":
+        if self.cfg.model.connector.mode == "qformer_1":
             layer_prompt_outputs = []
             for idx, encoder_layer in enumerate(self.encoder.layers):
                 
@@ -137,21 +156,37 @@ class WhisperPerceptionModule(NeuralModule, Exportable):
 
                     layer_prompt_output = qformer_output.last_hidden_state # (b, prompt_size, d_model)
                     layer_prompt_outputs.append(layer_prompt_output) # list of (b, prompt_size, d_model)
+
+            layer_prompt_outputs = torch.stack(layer_prompt_outputs, dim=0) # (layer, b, prompt_size, d_model)
+            layer_prompt_outputs = layer_prompt_outputs.permute(1, 2, 0, 3) # (b, prompt_size, layer, d_model)
+            
+            self.norm_weights = torch.nn.functional.softmax(self.connector.layer_weights, dim=-1).unsqueeze(-1) # (prompt_size, layer, 1)
+            prompt_output = (layer_prompt_outputs * self.norm_weights).sum(dim=2) # (b, prompt_size, d_model)
+            assert prompt_output.size(1) == self.cfg.model.connector.prompt_size, prompt_output.size()
+            prompt_output = self.connector.proj(prompt_output)
+            
+            return prompt_output
+        
+        elif self.cfg.model.connector.mode == "cnn_1":
+            for idx, encoder_layer in enumerate(self.encoder.layers):
+                layer_outputs = encoder_layer(
+                    hidden_states,
+                    attention_mask=None,
+                    layer_head_mask=None,
+                    output_attentions=None,
+                )
+                hidden_states = layer_outputs[0]
+            hidden_states = self.encoder.layer_norm(hidden_states)
+
+            hidden_states = torch.permute(hidden_states, (0, 2, 1))
+            cnn_output = self.connector.cnn(hidden_states)
+            cnn_output = torch.permute(cnn_output, (0, 2, 1))
+            cnn_output = self.connector.proj(cnn_output)
+
+            return cnn_output
+
+
         else:
             raise NotImplementedError(f"mode {self.mode} not implemented")
         
-        layer_prompt_outputs = torch.stack(layer_prompt_outputs, dim=0) # (layer, b, prompt_size, d_model)
-        layer_prompt_outputs = layer_prompt_outputs.permute(1, 2, 0, 3) # (b, prompt_size, layer, d_model)
         
-        if self.cfg.model.connector.mode in ["qformer_1", "prompt_1", "prompt_2"]:
-            self.norm_weights = torch.nn.functional.softmax(self.connector.layer_weights, dim=-1).unsqueeze(-1) # (prompt_size, layer, 1)
-        else:
-            raise NotImplementedError()
-        
-
-        prompt_output = (layer_prompt_outputs * self.norm_weights).sum(dim=2) # (b, prompt_size, d_model)
-        assert prompt_output.size(1) == self.cfg.model.connector.prompt_size, prompt_output.size()
-
-        prompt_output = self.connector.proj(prompt_output)
-        
-        return prompt_output

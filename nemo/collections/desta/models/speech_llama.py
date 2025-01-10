@@ -64,11 +64,10 @@ class SpeechLLaMA(ModelPT, Exportable):
         # ========================
         if self.cfg.model.language_model.model_id == "kehanlu/llm32":
             self.language_model = MllamaForCausalLM.from_pretrained(
-                self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16)
+                self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16, cache_dir=os.getenv("HF_HOME"))
         else:
             self.language_model = AutoModelForCausalLM.from_pretrained(
-                self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16
-            )
+                self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16, cache_dir=os.getenv("HF_HOME"))
         
         
         if hasattr(self.cfg.model, "lora") and self.cfg.model.lora is not None:
