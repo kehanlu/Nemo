@@ -26,7 +26,6 @@ from whisper_normalizer.basic import BasicTextNormalizer
 from nemo.utils.khlu import check_finename, check_consecutive_words
 from omegaconf import DictConfig, OmegaConf, open_dict
 
-from peft import LoraConfig, TaskType, get_peft_model
 from collections import OrderedDict
 
 import gc
@@ -73,6 +72,8 @@ class SpeechLLaMA(ModelPT, Exportable):
         
         
         if hasattr(self.cfg.model, "lora") and self.cfg.model.lora is not None:
+            from peft import LoraConfig, TaskType, get_peft_model
+
             lora_config = LoraConfig(
                 r=self.cfg.model.lora.rank,
                 target_modules=["q_proj", 'k_proj', "v_proj"],
