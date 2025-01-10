@@ -65,13 +65,10 @@ class SpeechLLaMA(ModelPT, Exportable):
         # ========================
         if self.cfg.model.language_model.model_id == "kehanlu/llm32":
             self.language_model = MllamaForCausalLM.from_pretrained(
-                self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16,
-                cache_dir="/NeMo/.cache"
-            )
+                self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16)
         else:
             self.language_model = AutoModelForCausalLM.from_pretrained(
-                self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16,
-                cache_dir="/NeMo/.cache"
+                self.cfg.model.language_model.model_id, torch_dtype=torch.bfloat16
             )
         
         
@@ -558,7 +555,7 @@ class SpeechLLaMA(ModelPT, Exportable):
         for i, batch in enumerate(results):
             # batch: [{}, {}]
             for result in batch:
-                question_type = result.get("question_type", "gen")
+                question_type = result["question_type"] if result.get("question_type") else result["dataset"]
                 metric = result.get("metric")
 
                 prediction = normalizer(result["prediction"].replace("<|eot_id|>", ""))
