@@ -34,6 +34,8 @@ class QformerConnector(NeuralModule):
             self.target_layer_ids = [0,1,2,3]
         elif self.cfg.model.speech_encoder.model_id == "openai/whisper-large-v3":
             self.target_layer_ids = [3, 7, 11, 15, 19, 23, 27, 31]
+        elif self.cfg.model.speech_encoder.model_id == "facebook/w2v-bert-2.0":
+            self.target_layer_ids = [6, 12, 18, 24]
         else:
             raise NotImplementedError(f"model_id {self.cfg.model.speech_encoder.model_id} not implemented")
 
@@ -94,7 +96,7 @@ class WhisperPerceptionModule(NeuralModule, Exportable):
 
     
 
-    def forward(self, input_features):
+    def forward(self, input_features, attention_mask=None, **kwargs):
         bs = input_features.size(0)
 
         audio_features = self.forward_whisper(input_features=input_features)
@@ -106,7 +108,7 @@ class WhisperPerceptionModule(NeuralModule, Exportable):
         return audio_features, audio_feature_lengths
 
 
-    def forward_whisper(self, input_features):
+    def forward_whisper(self, input_features, attention_mask=None, **kwargs):
         """
         2024.07.07 @kehan
         copy from previous implementation for qformer_1
@@ -189,4 +191,64 @@ class WhisperPerceptionModule(NeuralModule, Exportable):
         else:
             raise NotImplementedError(f"mode {self.mode} not implemented")
         
+
+
+class SpeechPerceptionModule(NeuralModule):
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+
+        from transformers import AutoFeatureExtractor, Wav2Vec2BertModel
+        self.encoder = Wav2Vec2BertModel.from_pretrained("facebook/w2v-bert-2.0")
         
+        if self.cfg.model.connector.mode == "qformer_1":
+            self.connector = QformerConnector(cfg=self.cfg)
+        elif self.cfg.model.connector.mode == "cnn_1":
+            self.connector = CNNConnector(cfg=self.cfg)
+        else:
+            raise NotImplementedError(f"mode {self.cfg.model.connector.mode} not implemented")
+
+    def forward(self, input_features, attention_mask):
+        bs = input_features.size(0)
+
+        audio_features = self.forward_encoder(input_features=input_features, attention_mask=attention_mask)
+        audio_feature_lengths = torch.ones(
+            [bs,], dtype=torch.long, device=input_features.device 
+        ) * audio_features.size(1) # assume all have same lengths
+        
+        
+        return audio_features, audio_feature_lengths
+
+    def forward_encoder(self, input_features, attention_mask):
+        
+        outputs = self.encoder(input_features=input_features, attention_mask=attention_mask, output_hidden_states=True)
+        hidden_states_list = outputs.hidden_states
+
+        if self.cfg.model.connector.mode == "qformer_1":
+            layer_prompt_outputs = []
+            for idx, hidden_states in enumerate(hidden_states_list):
+                if idx in self.connector.target_layer_ids:
+                    layer_prompt = self.connector.layer_prompts[self.connector.target_layer_ids.index(idx)].expand(bs, -1, -1)
+                    
+                    # Qformer is a BERTEncoder(but set to decoder) from huggingface Transformers
+                    qformer_output = self.connector.qformer(
+                        hidden_states=layer_prompt,
+                        encoder_hidden_states=hidden_states,
+                        attention_mask=attention_mask,
+                    )
+
+                    layer_prompt_output = qformer_output.last_hidden_state # (b, prompt_size, d_model)
+                    layer_prompt_outputs.append(layer_prompt_output)
+
+            layer_prompt_outputs = torch.stack(layer_prompt_outputs, dim=0) # (layer, b, prompt_size, d_model)
+            layer_prompt_outputs = layer_prompt_outputs.permute(1, 2, 0, 3) # (b, prompt_size, layer, d_model)
+            
+            self.norm_weights = torch.nn.functional.softmax(self.connector.layer_weights, dim=-1).unsqueeze(-1) # (prompt_size, layer, 1)
+            prompt_output = (layer_prompt_outputs * self.norm_weights).sum(dim=2) # (b, prompt_size, d_model)
+            assert prompt_output.size(1) == self.cfg.model.connector.prompt_size, prompt_output.size()
+            prompt_output = self.connector.proj(prompt_output)
+            
+            return prompt_output
+        else:
+            raise NotImplementedError(f"mode {self.cfg.model.connector.mode} not implemented")
+

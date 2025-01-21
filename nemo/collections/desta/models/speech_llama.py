@@ -93,7 +93,12 @@ class SpeechLLaMA(ModelPT, Exportable):
         # Initialize speech perception module
         # - Encoder + Modality connector
         # ========================
-        self.perception = WhisperPerceptionModule(cfg=self.cfg)
+        if "whisper" in self.cfg.model.speech_encoder.model_id:
+            self.perception = WhisperPerceptionModule(cfg=self.cfg)
+        elif "w2v-bert-2.0" in self.cfg.model.speech_encoder.model_id:
+            self.perception = SpeechPerceptionModule(cfg=self.cfg)
+        else:
+            raise NotImplementedError(f"model_id {self.cfg.model.speech_encoder.model_id} not implemented")
 
 
         # ========================
@@ -134,6 +139,7 @@ class SpeechLLaMA(ModelPT, Exportable):
                                 attention_mask=batch["attention_mask"],
                                 labels=batch["labels"],
                                 audio_features=batch["audio_features"],
+                                audio_attention_mask=batch["audio_attention_mask"],
                                 audio_positions=batch["audio_positions"]
             )
         elif len(batch["audio_features"].size()) == 4:
@@ -155,13 +161,13 @@ class SpeechLLaMA(ModelPT, Exportable):
         return outputs
 
 
-    def prepare_llm_input(self, input_ids, attention_mask, labels, audio_features, audio_positions):
+    def prepare_llm_input(self, input_ids, attention_mask, labels, audio_features, audio_attention_mask, audio_positions):
         # put audio features into the input
         bs = input_ids.size(0)
         inputs_embeds = self.language_model.model.embed_tokens(input_ids) # [bs, seq_len, hidden_size]
         
         
-        audio_features, audio_feature_lengths = self.perception(audio_features)
+        audio_features, audio_feature_lengths = self.perception(input_features=audio_features, attention_mask=audio_attention_mask)
 
         new_input_ids = []
         new_inputs_embeds = []
@@ -308,7 +314,8 @@ class SpeechLLaMA(ModelPT, Exportable):
                                attention_mask=batch["context_attention_mask"],
                                labels=batch["labels"],
                                audio_features=batch["audio_features"],
-                               audio_positions=batch["audio_positions"]
+                               audio_positions=batch["audio_positions"],
+                               audio_attention_mask=batch["audio_attention_mask"]
             )
         elif len(batch["audio_features"].size()) == 4:
             inputs_embeds, attention_mask, labels = self.prepare_llm_input_multiaudio(input_ids=batch["context_input_ids"], 
@@ -555,8 +562,8 @@ class SpeechLLaMA(ModelPT, Exportable):
         for i, batch in enumerate(results):
             # batch: [{}, {}]
             for result in batch:
-                question_type = result["question_type"] if result.get("question_type") else result["dataset"]
-                metric = result.get("metric")
+                question_type = result["question_type"] if result.get("question_type") else result.get("dataset", "no_group")
+                metric = result.get("metric", "accuracy")
 
                 prediction = normalizer(result["prediction"].replace("<|eot_id|>", ""))
                 target = normalizer(result["target"].replace("<|eot_id|>", ""))
